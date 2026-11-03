@@ -1,0 +1,13 @@
+# Build output (published as GitHub release assets)
+/dist/
+*.wax.lua
+*.ethos-minify.tmp
+*.rbxm
+*.rbxl
+*.rbxlx
+*.lock
+
+# Tooling
+.vscode/
+/.larvae/
+lune_packages/

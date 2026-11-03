@@ -1,0 +1,5 @@
+# Tools for building Ethos Dex, managed by Aftman (https://github.com/LPGhatguy/aftman).
+[tools]
+lune = "lune-org/lune@0.10.4"
+darklua = "seaofvoices/darklua@0.17.2"
+rojo = "rojo-rbx/rojo@7.7.1"

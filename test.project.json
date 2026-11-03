@@ -1,0 +1,9 @@
+{
+  "name": "EthosDexTests",
+  "tree": {
+    "$path": "test",
+    "EthosDex": {
+      "$path": "src"
+    }
+  }
+}

@@ -1,0 +1,394 @@
+--!strict
+--!nolint LocalShadow
+
+local Fusion = require(script.Parent.Parent.Parent.packages.fusion)
+
+local ColorSpace = require(script.Parent.Parent.colorSpace)
+
+local Types = require(script.Parent.types)
+local Constants = require(script.Parent.constants)
+
+local Computed, New = Fusion.Computed, Fusion.New
+
+-- Public semantic names resolve here so components do not need to know the
+-- generated palette's storage keys. Canonical generated names are accepted as
+-- well, which keeps this interface useful for less common tokens.
+local TOKEN_NAMES = table.freeze({
+	accent = "AccentPrimary",
+	background = "BgPrimary",
+	["background.secondary"] = "BgPrimaryHighlight",
+	stroke = "BgTertiary",
+	text = "FgPrimary",
+	["text.secondary"] = "FgSecondary",
+	["text.tertiary"] = "FgTertiary",
+	["text.quaternary"] = "FgQuaternary",
+	["text.quinary"] = "FgQuinary",
+	danger = "AccentDestructive",
+	warning = "AccentCaution",
+	success = "Success",
+	blue = "Blue",
+	brown = "Brown",
+	cyan = "Cyan",
+	gray = "Gray",
+	green = "Green",
+	magenta = "Magenta",
+	orange = "Orange",
+	pink = "Pink",
+	purple = "Purple",
+	red = "Red",
+	violet = "Violet",
+	white = "White",
+	yellow = "Yellow",
+	["font.main"] = "FontMain",
+	["font.mono"] = "FontMono",
+})
+
+local function GetToken(theme: Types.Theme, scope: Fusion.Scope, tokenName: Fusion.UsedAs<string>): Fusion.UsedAs<unknown>
+	return Computed(
+		scope,
+		function(use)
+			LPH_ATTRIBUTES(VM(NONE), PRESET(FAST), ERROR_HANDLING(false))
+			local requestedName = use(tokenName)
+			local generatedName = TOKEN_NAMES[requestedName] or requestedName
+			local token = theme[generatedName]
+
+			assert(token ~= nil, (`Unknown theme token %q`):format(requestedName))
+			return use(token)
+		end
+	)
+end
+
+local function LerpColor(from: Color3, to: Color3, alpha: number)
+	return ColorSpace.ToGamutMappedColor3(
+		ColorSpace.Oklab.From(from):Lerp(ColorSpace.Oklab.From(to), alpha)
+	)
+end
+
+local function ComputeWithDefault(
+	theme: Types.Theme,
+	scope: Fusion.Scope,
+	itemName: Fusion.UsedAs<string>,
+	default: any
+)
+	return Computed(
+		scope,
+		function(use)
+			LPH_ATTRIBUTES(VM(NONE), PRESET(FAST), ERROR_HANDLING(false))
+			local usedItemName = use(itemName)
+
+			return use(theme[usedItemName]) or default
+		end
+	)
+end
+
+local function ResolveColorModifier(
+	theme: Types.Theme,
+	use: Fusion.Use,
+	color: Color3,
+	modifier: Types.ThemeColorModifier?
+): Color3
+	return if modifier == "Hover" then LerpColor(color, use(theme.BgPrimary), .1)
+		elseif modifier == "HoverStroke" then LerpColor(color, use(theme.FgPrimary), .1)
+		elseif modifier == "Press" then LerpColor(color, use(theme.BgPrimary), .2)
+		else color
+end
+
+local function ApplyColorModifier(
+	theme: Types.Theme,
+	scope: Fusion.Scope,
+	color: Fusion.UsedAs<Color3>,
+	modifier: Fusion.UsedAs<Types.ThemeColorModifier?>
+): Fusion.Computed<Color3>
+	return Computed(
+		scope,
+		function(use, scope): Color3
+			LPH_ATTRIBUTES(VM(NONE), PRESET(FAST), ERROR_HANDLING(false))
+			return ResolveColorModifier(theme, use, use(color), use(modifier))
+		end
+	)
+end
+
+local function ApplyNamedColorModifier(
+	theme: Types.Theme,
+	scope: Fusion.Scope,
+	colorName: Fusion.UsedAs<string>,
+	defaultColor: Fusion.UsedAs<Color3>,
+	modifier: Fusion.UsedAs<Types.ThemeColorModifier?>
+): Fusion.Computed<Color3>
+	return Computed(
+		scope,
+		function(use, scope): Color3
+			LPH_ATTRIBUTES(VM(NONE), PRESET(FAST), ERROR_HANDLING(false))
+			local usedColorName = use(colorName)
+
+			local usedColor = use(theme[usedColorName] :: Fusion.UsedAs<Color3>)
+				or use(defaultColor)
+
+			return ResolveColorModifier(theme, use, usedColor, use(modifier))
+		end
+	)
+end
+
+local function GetBg(
+	theme: Types.Theme,
+	scope: Fusion.Scope,
+	variant: Fusion.UsedAs<Types.BgVariant>,
+	modifier: Fusion.UsedAs<Types.ThemeColorModifier?>
+): Fusion.UsedAs<Color3>
+	local computeName = Computed(
+		scope,
+		function(use, scope)
+			LPH_ATTRIBUTES(VM(NONE), PRESET(FAST), ERROR_HANDLING(false))
+			local usedVariant = use(variant)
+
+			return `Bg{usedVariant}`
+		end
+	)
+
+	return ApplyNamedColorModifier(theme, scope, computeName, theme.BgPrimary, modifier)
+end
+
+local function GetBgHighlight(
+	theme: Types.Theme,
+	scope: Fusion.Scope,
+	variant: Fusion.UsedAs<Types.BgVariant>,
+	modifier: Fusion.UsedAs<Types.ThemeColorModifier?>
+): Fusion.UsedAs<Color3>
+	local computeName = Computed(
+		scope,
+		function(use, scope)
+			LPH_ATTRIBUTES(VM(NONE), PRESET(FAST), ERROR_HANDLING(false))
+			local usedVariant = use(variant)
+
+			return `Bg{usedVariant}Highlight`
+		end
+	)
+
+	return ApplyNamedColorModifier(theme, scope, computeName, theme.BgPrimaryHighlight, modifier)
+end
+
+local function GetFg(
+	theme: Types.Theme,
+	scope: Fusion.Scope,
+	variant: Fusion.UsedAs<Types.FgVariant>,
+	accentVariant: Fusion.UsedAs<Types.AccentVariant?>?,
+	modifier: Fusion.UsedAs<Types.ThemeColorModifier?>
+): Fusion.UsedAs<Color3>
+	local computeName = Computed(
+		scope,
+		function(use, scope)
+			LPH_ATTRIBUTES(VM(NONE), PRESET(FAST), ERROR_HANDLING(false))
+			local usedVariant = use(variant)
+			local usedAccentVariant = use(accentVariant)
+
+			return if usedAccentVariant then `Accent{usedAccentVariant}Fg{usedVariant}`
+				else `Fg{usedVariant}`
+		end
+	)
+
+	return ApplyNamedColorModifier(theme, scope, computeName, theme.FgPrimary, modifier)
+end
+
+local function GetAccent(
+	theme: Types.Theme,
+	scope: Fusion.Scope,
+	variant: Fusion.UsedAs<Types.AccentVariant>,
+	modifier: Fusion.UsedAs<Types.ThemeColorModifier?>
+): Fusion.UsedAs<Color3>
+	local computeName = Computed(
+		scope,
+		function(use, scope)
+			LPH_ATTRIBUTES(VM(NONE), PRESET(FAST), ERROR_HANDLING(false))
+			local usedVariant = use(variant)
+
+			return `Accent{usedVariant}`
+		end
+	)
+
+	return ApplyNamedColorModifier(theme, scope, computeName, theme.AccentPrimary, modifier)
+end
+
+local function GetAccentFg(
+	theme: Types.Theme,
+	scope: Fusion.Scope,
+	variant: Fusion.UsedAs<Types.AccentVariant>,
+	modifier: Fusion.UsedAs<Types.ThemeColorModifier?>
+): Fusion.UsedAs<Color3>
+	local computeName = Computed(
+		scope,
+		function(use, scope)
+			LPH_ATTRIBUTES(VM(NONE), PRESET(FAST), ERROR_HANDLING(false))
+			local usedVariant = use(variant)
+
+			return `AccentFg{usedVariant}`
+		end
+	)
+
+	return ApplyNamedColorModifier(theme, scope, computeName, theme.AccentPrimary, modifier)
+end
+
+local function GetHeight(
+	theme: Types.Theme,
+	scope: Fusion.Scope,
+	variant: Fusion.UsedAs<Types.HeightVariant>
+): Fusion.UsedAs<number>
+	local computeName = Computed(
+		scope,
+		function(use, scope)
+			LPH_ATTRIBUTES(VM(NONE), PRESET(FAST), ERROR_HANDLING(false))
+			local usedVariant = use(variant)
+
+			return `Height{usedVariant}`
+		end
+	)
+
+	return ComputeWithDefault(theme, scope, computeName, theme.HeightLg)
+end
+
+local function GetCornerRadius(
+	theme: Types.Theme,
+	scope: Fusion.Scope,
+	variant: Fusion.UsedAs<Types.CornerRadiusVariant>
+): Fusion.UsedAs<number>
+	local computeName = Computed(
+		scope,
+		function(use, scope)
+			LPH_ATTRIBUTES(VM(NONE), PRESET(FAST), ERROR_HANDLING(false))
+			local usedVariant = use(variant)
+
+			return `CornerRadius{usedVariant}`
+		end
+	)
+
+	return ComputeWithDefault(theme, scope, computeName, theme.CornerRadiusMd)
+end
+
+local function GetFont(
+	theme: Types.Theme,
+	scope: Fusion.Scope,
+	variant: Fusion.UsedAs<Types.FontVariant>,
+	weight: Fusion.UsedAs<Enum.FontWeight>?,
+	style: Fusion.UsedAs<Enum.FontStyle>?
+): Fusion.UsedAs<Font>
+	return Computed(
+		scope,
+		function(use, scope): Font
+			LPH_ATTRIBUTES(VM(NONE), PRESET(FAST), ERROR_HANDLING(false))
+			local usedVariant = use(variant)
+
+			local font = use(theme[`Font{usedVariant}`] :: Fusion.UsedAs<Font>)
+				or use(theme.FontMain)
+
+			return Font.new(
+				font.Family,
+				use(weight) or Enum.FontWeight.Medium,
+				use(style) or Enum.FontStyle.Normal
+			)
+		end
+	)
+end
+
+local function GetFontSize(
+	theme: Types.Theme,
+	scope: Fusion.Scope,
+	variant: Fusion.UsedAs<Types.FontVariant>,
+	sizeVariant: Fusion.UsedAs<Types.FontSizeVariant>
+): Fusion.UsedAs<number>
+	local computeName = Computed(
+		scope,
+		function(use, scope)
+			LPH_ATTRIBUTES(VM(NONE), PRESET(FAST), ERROR_HANDLING(false))
+			local usedVariant = use(variant)
+			local usedSizeVariant = use(sizeVariant)
+
+			return `Font{usedVariant}{usedSizeVariant}Size`
+		end
+	)
+
+	return ComputeWithDefault(theme, scope, computeName, theme.FontMainBodySize)
+end
+
+local DefaultHighlightColor = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Constants.BASE_LIGHT_TEXT_COLOR),
+	ColorSequenceKeypoint.new(1, Constants.BASE_DARK_TEXT_COLOR),
+})
+
+local function HighlightGradient(
+	_theme: Types.Theme,
+	scope: Fusion.Scope,
+	transparency: Fusion.UsedAs<number>,
+	gradientColor: Fusion.UsedAs<ColorSequence?>?
+)
+	local color = if gradientColor == nil then DefaultHighlightColor
+		else Computed(
+			scope,
+			function(use): ColorSequence
+				LPH_ATTRIBUTES(VM(NONE), PRESET(FAST), ERROR_HANDLING(false))
+				return use(gradientColor) or DefaultHighlightColor
+			end
+		)
+
+	return New(scope, "UIGradient")({
+		Color = color,
+		Rotation = 90,
+		Transparency = Computed(
+			scope,
+			function(use, scope)
+				LPH_ATTRIBUTES(VM(NONE), PRESET(FAST), ERROR_HANDLING(false))
+				return NumberSequence.new(use(transparency))
+			end
+		),
+	}) :: UIGradient
+end
+
+local function CalcColorModifier(
+	scope: Fusion.Scope,
+	isHover: Fusion.UsedAs<boolean>,
+	isPress: Fusion.UsedAs<boolean>,
+	hoverMode: ("Stroke" | "Default")?
+): Fusion.UsedAs<Types.ThemeColorModifier?>
+	return Fusion.Computed(
+		scope,
+		function(use, scope): Types.ThemeColorModifier?
+			LPH_ATTRIBUTES(VM(NONE), PRESET(FAST), ERROR_HANDLING(false))
+			local usedIsHover, usedIsPress = use(isHover), use(isPress)
+
+			return if usedIsPress then "Press"
+				elseif usedIsHover then if hoverMode == "Stroke" then "HoverStroke" else "Hover"
+				else nil
+		end
+	)
+end
+
+local function GetNextVariant(scope: Fusion.Scope, variant: Fusion.UsedAs<Types.BgVariant>): Fusion.UsedAs<Types.BgVariant>
+	return Computed(
+		scope,
+		function(use, scope): Types.BgVariant
+			LPH_ATTRIBUTES(VM(NONE), PRESET(FAST), ERROR_HANDLING(false))
+			local usedVariant = use(variant)
+
+			return if usedVariant == "Primary" then "Secondary"
+				elseif usedVariant == "Secondary" then "Tertiary"
+				elseif usedVariant == "Tertiary" then "Quaternary"
+				elseif usedVariant == "Quaternary" then "Quinary"
+				else "Secondary"
+		end
+	)
+end
+
+return {
+	GetToken = GetToken,
+	GetBg = GetBg,
+	GetBgHighlight = GetBgHighlight,
+	GetFg = GetFg,
+	GetAccent = GetAccent,
+	GetAccentFg = GetAccentFg,
+	GetHeight = GetHeight,
+	GetCornerRadius = GetCornerRadius,
+	GetFont = GetFont,
+	GetFontSize = GetFontSize,
+	HighlightGradient = HighlightGradient,
+	ApplyColorModifier = ApplyColorModifier,
+	CalcColorModifier = CalcColorModifier,
+	GetNextVariant = GetNextVariant,
+}

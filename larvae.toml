@@ -1,0 +1,18 @@
+[fmt]
+column_width = 100
+line_endings = "unix"
+indent_type = "tabs"
+indent_width = 4
+quote_style = "auto-prefer-double"
+call_parentheses = "always"
+
+[lint]
+std = "roblox"
+exclude = ["src/packages/**"]
+
+[lint.rules]
+global_usage = "allow"
+undefined_variable = "allow"
+unscoped_variables = "allow"
+mixed_table = "allow"
+roblox_manual_fromscale_or_fromoffset = "allow"
