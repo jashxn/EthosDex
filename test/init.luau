@@ -277,4 +277,27 @@ test(
 	end
 )
 
+test(
+	"cursor",
+	function()
+		local Cursor = require(script.EthosDex.app.cursor)
+		local gui = Instance.new("ScreenGui")
+		gui.Parent = Env.guiParent()
+		local layer = Instance.new("Frame")
+		layer.Size = UDim2.fromScale(1, 1)
+		layer.Parent = gui
+		local panel = Instance.new("Frame")
+		panel.Position = UDim2.fromOffset(100, 100)
+		panel.Size = UDim2.fromOffset(50, 50)
+		panel.Parent = layer
+		task.wait()
+		local origin = layer.AbsolutePosition
+		check("over panel", Cursor.over(layer, origin + Vector2.new(120, 120)))
+		check("off panel", not Cursor.over(layer, origin + Vector2.new(10, 10)))
+		panel.Visible = false
+		check("hidden panel ignored", not Cursor.over(layer, origin + Vector2.new(120, 120)))
+		gui:Destroy()
+	end
+)
+
 return results

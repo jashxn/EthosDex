@@ -18,6 +18,7 @@ local Picker = require(script.picker)
 local Actions = require(script.actions)
 local Window = require(script.window)
 local Dock = require(script.dock)
+local Cursor = require(script.cursor)
 local Explorer = require(script.explorer)
 local Properties = require(script.properties)
 local ScriptViewer = require(script.scriptViewer)
@@ -250,6 +251,7 @@ function App.start()
 		}
 	)
 	window.DragHandle(topbar)
+	Cursor.new(scope, layer)
 
 	local destroy
 	-- The dock header's buttons, after the explorer's own.

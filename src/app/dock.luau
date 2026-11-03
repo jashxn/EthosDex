@@ -183,7 +183,21 @@ function Dock.new(scope, props)
 			end),
 			Visible = open,
 			ZIndex = 10,
-			Children = { props.Explorer, splitter, properties, props.Footer, edge },
+			Children = {
+				props.Explorer,
+				splitter,
+				properties,
+				props.Footer,
+				edge,
+				-- A visible Modal button frees a locked mouse (first person, shift lock) while open.
+				scope:New("TextButton")({
+					Name = "FreeMouse",
+					Modal = true,
+					Size = UDim2.fromOffset(0, 0),
+					BackgroundTransparency = 1,
+					Text = "",
+				}),
+			},
 		}
 	)
 
