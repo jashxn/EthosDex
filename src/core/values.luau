@@ -160,6 +160,12 @@ function Values.parse(text: string, current): (boolean, any)
 	elseif kind == "CFrame" then
 		if #n == 3 then
 			return true, current.Rotation + Vector3.new(n[1], n[2], n[3])
+		elseif #n == 6 then
+			-- Position, then orientation in degrees, the way the Orientation property reads.
+			return
+				true,
+				CFrame.new(n[1], n[2], n[3])
+					* CFrame.fromOrientation(math.rad(n[4]), math.rad(n[5]), math.rad(n[6]))
 		elseif #n == 12 then
 			return true, CFrame.new(table.unpack(n))
 		end

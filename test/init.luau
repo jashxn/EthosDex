@@ -62,6 +62,13 @@ test(
 				and v.Position == Vector3.new(1, 2, 3)
 				and v.LookVector:FuzzyEq(CFrame.Angles(0, math.pi / 2, 0).LookVector)
 		)
+		ok, v = Values.parse("1, 2, 3, 0, 90, 0", CFrame.new())
+		check(
+			"parse cframe with orientation",
+			ok
+				and v.Position == Vector3.new(1, 2, 3)
+				and math.abs(select(2, v:ToOrientation()) - math.pi / 2) < 1e-4
+		)
 		ok = Values.parse("abc", 5)
 		check("reject bad number", not ok)
 		ok, v = Values.parse("Bright red", BrickColor.new("White"))
@@ -92,6 +99,19 @@ test(
 			Path.of(plain, game, nil) == 'game:GetService("Workspace")["Dex Test"].Plain_1',
 			Path.of(plain, game, nil)
 		)
+		local twin = Instance.new("Folder")
+		twin.Name = "Plain_1"
+		twin.Parent = folder
+		local twinPath = Path.of(twin, game, nil)
+		check(
+			"path same-name sibling",
+			string.find(twinPath, ":GetChildren()[", 1, true) ~= nil,
+			twinPath
+		)
+		local found = loadstring and loadstring("return " .. twinPath)
+		if found then
+			check("path same-name finds it", found() == twin, twinPath)
+		end
 		local orphan = Instance.new("Folder")
 		orphan.Name = "Orphan"
 		check(
@@ -123,6 +143,21 @@ test(
 			not Search.matches(Instance.new("Folder"), Search.parse("class:Part"))
 		)
 		check("isa", Search.matches(part, Search.parse("isa:BasePart")))
+		part.Transparency = 0.5
+		part.Material = Enum.Material.Neon
+		part.Anchored = true
+		check("compare number >", Search.matches(part, Search.parse("Transparency>0.2")))
+		check("compare number <=", not Search.matches(part, Search.parse("Transparency<=0.2")))
+		check("compare bool", Search.matches(part, Search.parse("Anchored=true")))
+		check("compare enum by name", Search.matches(part, Search.parse("material=neon")))
+		check("compare !=", not Search.matches(part, Search.parse("Material!=Neon")))
+		check("compare contains", Search.matches(part, Search.parse("Name~big")))
+		check("compare with name words", Search.matches(part, Search.parse("door Anchored==true")))
+		check(
+			"missing property",
+			not Search.matches(Instance.new("Folder"), Search.parse("Anchored=true"))
+		)
+		check("text > isn't numeric", not Search.matches(part, Search.parse("Name>3")))
 	end
 )
 

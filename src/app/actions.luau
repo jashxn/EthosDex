@@ -29,6 +29,15 @@ local function plural(count: number, word: string): string
 	return if count == 1 then `1 {word}` else `{count} {word}s`
 end
 
+-- Opens a script in the viewer, decompiled. False when it isn't one or can't be read here.
+function Actions.openScript(object): boolean
+	if not (scriptLike(object) and Env.canDecompile(object)) then
+		return false
+	end
+	State.ScriptTarget:set(object)
+	State.open("Script")
+	return true
+end
 function Actions.copy(text: string, what: string)
 	if Env.clipboard(text) then
 		Toast.show(`Copied {what}`, "success")
@@ -56,6 +65,11 @@ end
 -- Scripts are destroyed so they stop; anything else is parented to nil, so it can be undone.
 function Actions.delete(list)
 	local removed, count = {}, 0
+	-- Afterwards the first one's parent is selected, so you can keep going from there.
+	local after = nil
+	pcall(function()
+		after = list[1].Parent
+	end)
 	for _, object in list do
 		local ok, parent = pcall(function()
 			return object.Parent
@@ -81,7 +95,11 @@ function Actions.delete(list)
 			end
 		)
 	end
-	State.select({})
+	local keep = after ~= nil
+		and after ~= game
+		and after.Parent ~= nil
+		and table.find(list, after) == nil
+	State.select(if keep then { after } else {})
 	Toast.show(
 		(if count == #list then `Deleted {count}` else `Deleted {count} of {#list}`)
 			.. (if #removed > 0 then " · Ctrl+Z to undo" else ""),
@@ -130,26 +148,22 @@ function Actions.hold(list, cut: boolean)
 	Toast.show(`{if cut then "Cut" else "Copied"} {#list}`, "success")
 end
 
-function Actions.paste(parent)
-	if #held.List == 0 then
-		return
-	end
+-- Moves `list` into `parent` (cut and paste, or a drag in the explorer). Roblox refuses moves
+-- into the object itself or out of a locked spot, so those just don't happen.
+function Actions.move(list, parent)
 	local made, moved = {}, {}
-	for _, object in held.List do
-		if held.Cut then
-			local from = object.Parent
-			if pcall(function()
+	for _, object in list do
+		local ok, from = pcall(function()
+			return object.Parent
+		end)
+		if ok
+			and from ~= parent
+			and pcall(function()
 				object.Parent = parent
 			end) then
-				table.insert(made, object)
-				table.insert(moved, { object, from })
-			end
-		else
-			table.insert(made, cloneInto(object, parent))
+			table.insert(made, object)
+			table.insert(moved, { object, from })
 		end
-	end
-	if held.Cut then
-		held = { List = {}, Cut = false }
 	end
 	if #moved > 0 then
 		History.push(
@@ -160,7 +174,26 @@ function Actions.paste(parent)
 				end
 			end
 		)
-	elseif #made > 0 then
+	end
+	selectMade(made, "Couldn't move there.")
+	return #made
+end
+
+function Actions.paste(parent)
+	if #held.List == 0 then
+		return
+	end
+	if held.Cut then
+		local list = held.List
+		held = { List = {}, Cut = false }
+		Actions.move(list, parent)
+		return
+	end
+	local made = {}
+	for _, object in held.List do
+		table.insert(made, cloneInto(object, parent))
+	end
+	if #made > 0 then
 		undoMade(made, "paste")
 	end
 	selectMade(made, "Couldn't paste here.")
@@ -392,8 +425,7 @@ function Actions.entries(list, tree)
 			Disabled = if can then nil else UNSUPPORTED,
 			Detail = if can then nil else "Unsupported",
 			OnActivated = function()
-				State.ScriptTarget:set(first)
-				State.open("Script")
+				Actions.openScript(first)
 			end,
 		})
 	end
@@ -436,6 +468,16 @@ function Actions.entries(list, tree)
 			Icon = "person-standing",
 			OnActivated = function()
 				State.Hooks.reveal(first.Character)
+			end,
+		})
+	end
+	local owner = first:IsA("Model") and Env.service("Players"):GetPlayerFromCharacter(first)
+	if owner then
+		add({
+			Text = "Select player",
+			Icon = "person-standing",
+			OnActivated = function()
+				State.Hooks.reveal(owner)
 			end,
 		})
 	end

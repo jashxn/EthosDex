@@ -25,6 +25,18 @@ The layout follows Dex. A panel docks to the right edge, with the explorer on to
 - **Glow.** The selected part or model glows in the world, and whatever the pointer is over in the explorer glows fainter. You can turn either off.
 - **Settings.** UI scale, panel opacity, dock side (right or left), row height, text size for the explorer, properties and code, the property name column, the glows and the cursor. Reset puts them back.
 
+
+## Mouse and keyboard
+
+- **Double-click** (or **Enter**) a script to open it decompiled; anything else expands.
+- **Drag** rows onto another row to move them into it (a selected row carries the whole selection). Ctrl+Z puts them back.
+- **Middle-click** a part, model or player to view it; middle-click again to stop.
+- **Crosshair** picks a part in the world or a piece of the game's UI; the game's UI gets an outline like parts get a glow.
+- **Right-click a property**: copy it as code (`obj.Prop = value`), and for object properties like `Parent` or `Adornee`, **Pick in explorer** (click the new value) or **Clear**.
+- **Search** compares properties too: `WalkSpeed>16`, `Anchored=true`, `Material=Neon`, `Text~shop` (`= != > < >= <=`, `~` contains). New instances that match show up while the search is open. Clearing it returns to where you were, or to what you picked.
+- **Delete** selects the parent afterwards. Copy path indexes by position when a sibling shares the name.
+- CFrame properties take 3 numbers (move, keep rotation), 6 (position and orientation in degrees) or 12.
+
 ## Executor support
 
 Ethos Dex checks for every executor function before calling it, including the common aliases (`gethui`/`get_hidden_gui`, `request`/`http_request`/`syn.request`, ...), so it runs on any executor. When a function is missing, the feature that needs it is disabled and says why. Settings → Executor shows what this executor supports.

@@ -257,6 +257,7 @@ function Properties.new(scope)
 							Hidden = tags.Hidden or tags.NotScriptable,
 							EnumType = if property.ValueType.Category == "Enum" then property.ValueType.Name
 								else nil,
+							Object = property.ValueType.Category == "Class",
 						}
 					)
 				end
@@ -678,32 +679,80 @@ function Properties.new(scope)
 					return
 				end
 				local ok, value = read(entry)
-				Menu.open(
-					point,
+				local code = if ok then Values.code(value) else "nil"
+				local items = {
 					{
+						Text = "Copy value",
+						Icon = "copy",
+						OnActivated = function()
+							Actions.copy(if ok then Values.format(value) else "", "value")
+						end,
+					},
+					{
+						Text = "Copy as code",
+						Icon = "code",
+						Detail = "obj.Prop = value",
+						OnActivated = function()
+							local path = Actions.path(target)
+							Actions.copy(
+								if entry.Kind == "attr" then `{path}:SetAttribute("{entry.Name}", {code})`
+									elseif entry.Kind == "tags" then `-- tags: {if ok then value else ""}`
+									else `{path}.{entry.Name} = {code}`,
+								"code"
+							)
+						end,
+					},
+					{
+						Text = "Copy value as Luau",
+						Icon = "braces",
+						OnActivated = function()
+							Actions.copy(code, "value")
+						end,
+					},
+					{
+						Text = "Copy name",
+						Icon = "type",
+						OnActivated = function()
+							Actions.copy(entry.Name, "name")
+						end,
+					},
+				}
+				-- An object-valued property can be set by picking its new value in the explorer.
+				if entry.Kind == "prop"
+					and (entry.Object or ok and typeof(value) == "Instance")
+					and not entry.ReadOnly then
+					table.insert(items, 1, "divider")
+					table.insert(
+						items,
+						1,
 						{
-							Text = "Copy value",
-							Icon = "copy",
+							Text = "Clear",
+							Icon = "x",
+							Detail = "Set to nil",
 							OnActivated = function()
-								Actions.copy(if ok then Values.format(value) else "", "value")
+								write(entry, nil)
 							end,
-						},
+						}
+					)
+					table.insert(
+						items,
+						1,
 						{
-							Text = "Copy as Luau",
-							Icon = "code",
+							Text = "Pick in explorer",
+							Icon = "crosshair",
+							Detail = "Click the new value",
 							OnActivated = function()
-								Actions.copy(if ok then Values.code(value) else "nil", "value")
+								State.PickFor:set({
+									Text = `Click the new {entry.Name} in the explorer`,
+									Pick = function(object)
+										write(entry, object)
+									end,
+								})
 							end,
-						},
-						{
-							Text = "Copy name",
-							Icon = "type",
-							OnActivated = function()
-								Actions.copy(entry.Name, "name")
-							end,
-						},
-					}
-				)
+						}
+					)
+				end
+				Menu.open(point, items)
 			end
 		) do
 			table.insert(scope, connection)

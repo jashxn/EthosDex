@@ -21,6 +21,7 @@ local Menu = require(script.Parent.menu)
 local Toast = require(script.Parent.toast)
 local Actions = require(script.Parent.actions)
 local History = require(script.Parent.history)
+local Cursor = require(script.Parent.cursor)
 
 local Children = Fusion.Children
 local OnEvent = Fusion.OnEvent
@@ -82,10 +83,26 @@ function Explorer.new(scope)
 	end
 	buildTree()
 
+	local list -- the rows' ScrollingFrame, made below
+
 	-- Search --------------------------------------------------------------------------------
 	local query = scope:Value("")
 	local status = scope:Value("")
 	local generation = 0
+	-- Where the tree was when a search began. Clearing the search goes back there, or to what
+	-- you selected while searching.
+	local before = nil
+	-- The search shown now, so instances added while it's up join the results.
+	local live = nil
+	table.insert(
+		scope,
+		game.DescendantAdded:Connect(function(instance)
+			if live and tree.Filter == live.Filter and Search.matches(instance, live.Conditions) then
+				Search.mark(live.Filter, instance, game)
+				tree:_dirty()
+			end
+		end)
+	)
 	table.insert(
 		scope,
 		scope:Observer(query):onChange(function()
@@ -95,7 +112,23 @@ function Explorer.new(scope)
 			if string.match(text, "^%s*$") then
 				status:set("")
 				tree:setFilter(nil)
+				live = nil
+				local saved = before
+				before = nil
+				if saved then
+					local first = State.first()
+					if first and first ~= saved.First then
+						State.Hooks.reveal(first, true)
+					else
+						task.defer(function()
+							list.CanvasPosition = saved.Scroll
+						end)
+					end
+				end
 				return
+			end
+			if before == nil then
+				before = { Scroll = list.CanvasPosition, First = State.first() }
 			end
 			task.delay(
 				0.25,
@@ -117,6 +150,7 @@ function Explorer.new(scope)
 						return
 					end
 					tree:setFilter(filter)
+					live = { Filter = filter, Conditions = Search.parse(text) }
 					status:set(
 						if count == 0 then "No results"
 							else `{count}{if capped then "+" else ""} found`
@@ -178,7 +212,7 @@ function Explorer.new(scope)
 	searchField.Size = UDim2.new(1, -16, 0, 34)
 
 	-- List ----------------------------------------------------------------------------------
-	local list = scope:New("ScrollingFrame")({
+	list = scope:New("ScrollingFrame")({
 		Name = "Tree",
 		Position = UDim2.fromOffset(4, 104),
 		Size = UDim2.new(1, -8, 1, -104 - 4),
@@ -256,6 +290,85 @@ function Explorer.new(scope)
 		anchor = instance
 	end
 
+	-- Drag rows onto another row to move them into it. A press only becomes a drag past a few
+	-- pixels, and a selected row carries the whole selection.
+	local drag = nil -- { Items, Start, Moving, Ghost }
+	local function beginDrag(object, input)
+		if object == nil or object == NIL_ROOT or State.Touch then
+			return
+		end
+		drag = {
+			Items = if State.isSelected(object) then table.clone(State.selection()) else { object },
+			Start = Vector2.new(input.Position.X, input.Position.Y),
+			Moving = false,
+		}
+	end
+	local function endDrag()
+		if drag and drag.Ghost then
+			drag.Ghost:Destroy()
+		end
+		drag = nil
+		dirty = true
+	end
+	table.insert(
+		scope,
+		UserInputService.InputChanged:Connect(
+			function(input)
+				if drag == nil or input.UserInputType ~= Enum.UserInputType.MouseMovement then
+					return
+				end
+				local point = Vector2.new(input.Position.X, input.Position.Y)
+				if not drag.Moving and (point - drag.Start).Magnitude > 6 then
+					drag.Moving = true
+					local first = drag.Items[1]
+					drag.Ghost = Controls.Label(
+						scope,
+						{
+							Name = "DragGhost",
+							Parent = list:FindFirstAncestor("Layer"),
+							Size = UDim2.fromOffset(0, 24),
+							AutomaticSize = Enum.AutomaticSize.X,
+							BackgroundColor3 = Theme.Surface,
+							Text = if #drag.Items == 1 then first.Name else `{#drag.Items} items`,
+							TextSize = 13,
+							ZIndex = 80,
+							[Children] = {
+								scope:New("UICorner")({ CornerRadius = UDim.new(0, 8) }),
+								scope:New("UIPadding")({
+									PaddingLeft = UDim.new(0, 10),
+									PaddingRight = UDim.new(0, 10),
+								}),
+							},
+						}
+					)
+					drag.Ghost.BackgroundTransparency = 0.1 -- Label makes it see-through
+				end
+				if drag.Moving and drag.Ghost then
+					local layer = drag.Ghost.Parent
+					local at = (point - layer.AbsolutePosition) / State.scale()
+					drag.Ghost.Position = UDim2.fromOffset(at.X + 14, at.Y + 10)
+					dirty = true
+				end
+			end
+		)
+	)
+	table.insert(
+		scope,
+		UserInputService.InputEnded:Connect(function(input)
+			if drag == nil or input.UserInputType ~= Enum.UserInputType.MouseButton1 then
+				return
+			end
+			local target = hovering and hoveredRow and hoveredRow.Node and hoveredRow.Node.Instance
+			local items = drag.Items
+			local moving = drag.Moving
+			endDrag()
+			if moving and target and target ~= NIL_ROOT and table.find(items, target) == nil then
+				Actions.move(items, target)
+			end
+		end)
+	)
+	table.insert(scope, endDrag)
+
 	local function onClick(row)
 		local node = row.Node
 		if node == nil or Menu.justLongPressed() then
@@ -264,6 +377,13 @@ function Explorer.new(scope)
 		local instance = node.Instance
 		if instance == NIL_ROOT then
 			tree:toggle(node)
+			return
+		end
+		-- Picking a property's value: the click sets it and the selection stays put.
+		local pickFor = peek(State.PickFor)
+		if pickFor then
+			State.PickFor:set(nil)
+			pickFor.Pick(instance)
 			return
 		end
 		local ctrl = UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
@@ -299,7 +419,10 @@ function Explorer.new(scope)
 		end
 		local now = os.clock()
 		if lastClick.Instance == instance and now - lastClick.At < 0.35 then
-			tree:toggle(node)
+			-- Double-click: a script opens decompiled, anything else expands.
+			if not Actions.openScript(instance) then
+				tree:toggle(node)
+			end
 			lastClick.Instance = nil
 		else
 			lastClick.Instance, lastClick.At = instance, now
@@ -426,6 +549,22 @@ function Explorer.new(scope)
 			[OnEvent("Activated")] = function()
 				onClick(row)
 			end,
+			-- Middle-click views it, or stops viewing it. A left press may become a drag.
+			[OnEvent("InputBegan")] = function(input)
+				local object = row.Node and row.Node.Instance
+				if input.UserInputType == Enum.UserInputType.MouseButton1 then
+					beginDrag(object, input)
+				elseif input.UserInputType == Enum.UserInputType.MouseButton3
+					and object
+					and object ~= NIL_ROOT
+					and Actions.viewable(object) then
+					if peek(State.Viewing) == object then
+						Actions.stopViewing()
+					else
+						Actions.view(object)
+					end
+				end
+			end,
 			[OnEvent("MouseEnter")] = function()
 				row.Hovered = true
 				hoveredRow = row
@@ -551,7 +690,10 @@ function Explorer.new(scope)
 				else 0
 			local selected = selectedSet[instance] == true
 			row.Selected.Visible = selected
-			frame.BackgroundTransparency = if row.Hovered and not selected then 0.95 else 1
+			local dropping = drag ~= nil and drag.Moving and row.Hovered
+			frame.BackgroundTransparency = if dropping then 0.85
+				elseif row.Hovered and not selected then 0.95
+				else 1
 			bindName(row, instance)
 		end
 		-- The hover glow follows the row under the pointer (pick mode drives it instead).
@@ -577,48 +719,55 @@ function Explorer.new(scope)
 	-- deletes, Ctrl+C/X/V copy, cut and paste into, Ctrl+D duplicates.
 	table.insert(
 		scope,
-		UserInputService.InputBegan:Connect(function(input, processed)
-			if processed or not hovering or UserInputService:GetFocusedTextBox() then
-				return
-			end
-			local key = input.KeyCode
-			local current = State.first()
-			local index = current and indexOf(current)
-			if key == Enum.KeyCode.Up or key == Enum.KeyCode.Down then
-				local target = if index then index + (if key == Enum.KeyCode.Up then -1 else 1)
-					else 1
-				local node = flat[math.clamp(target, 1, math.max(1, #flat))]
-				if node and node.Instance ~= NIL_ROOT then
-					selectOnly(node.Instance)
-					scrollTo(math.clamp(target, 1, #flat))
+		UserInputService.InputBegan:Connect(
+			function(input, processed)
+				if processed or not hovering or UserInputService:GetFocusedTextBox() then
+					return
 				end
-			elseif (key == Enum.KeyCode.Right or key == Enum.KeyCode.Left) and index then
-				local node = flat[index]
-				if key == Enum.KeyCode.Right then
-					if not tree:isOpen(node) then
-						tree:setExpanded(node, true)
+				local key = input.KeyCode
+				local current = State.first()
+				local index = current and indexOf(current)
+				if key == Enum.KeyCode.Up or key == Enum.KeyCode.Down then
+					local target = if index then index + (if key == Enum.KeyCode.Up then -1 else 1)
+						else 1
+					local node = flat[math.clamp(target, 1, math.max(1, #flat))]
+					if node and node.Instance ~= NIL_ROOT then
+						selectOnly(node.Instance)
+						scrollTo(math.clamp(target, 1, #flat))
 					end
-				elseif tree:isOpen(node) and hasChildren(node) then
-					tree:setExpanded(node, false)
-				elseif node.Parent and node.Parent.Instance ~= NIL_ROOT then
-					selectOnly(node.Parent.Instance)
-				end
-			elseif key == Enum.KeyCode.F2 and current then
-				State.Hooks.rename(current)
-			elseif key == Enum.KeyCode.Delete and current then
-				Actions.delete(State.selection())
-			elseif current
-				and (UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
-					or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)) then
-				if key == Enum.KeyCode.C or key == Enum.KeyCode.X then
-					Actions.hold(State.selection(), key == Enum.KeyCode.X)
-				elseif key == Enum.KeyCode.V then
-					Actions.paste(current)
-				elseif key == Enum.KeyCode.D then
-					Actions.duplicate(State.selection())
+				elseif (key == Enum.KeyCode.Right or key == Enum.KeyCode.Left) and index then
+					local node = flat[index]
+					if key == Enum.KeyCode.Right then
+						if not tree:isOpen(node) then
+							tree:setExpanded(node, true)
+						end
+					elseif tree:isOpen(node) and hasChildren(node) then
+						tree:setExpanded(node, false)
+					elseif node.Parent and node.Parent.Instance ~= NIL_ROOT then
+						selectOnly(node.Parent.Instance)
+					end
+				elseif key == Enum.KeyCode.Return and index then
+					-- Enter does what a double-click does.
+					if not Actions.openScript(current) then
+						tree:toggle(flat[index])
+					end
+				elseif key == Enum.KeyCode.F2 and current then
+					State.Hooks.rename(current)
+				elseif key == Enum.KeyCode.Delete and current then
+					Actions.delete(State.selection())
+				elseif current
+					and (UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
+						or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)) then
+					if key == Enum.KeyCode.C or key == Enum.KeyCode.X then
+						Actions.hold(State.selection(), key == Enum.KeyCode.X)
+					elseif key == Enum.KeyCode.V then
+						Actions.paste(current)
+					elseif key == Enum.KeyCode.D then
+						Actions.duplicate(State.selection())
+					end
 				end
 			end
-		end)
+		)
 	)
 
 	-- Rename in place: a box over the row.
@@ -726,6 +875,53 @@ function Explorer.new(scope)
 		local hit = workspace:Raycast(ray.Origin, ray.Direction * 5000)
 		return hit and hit.Instance
 	end
+	local function shows(object): boolean
+		if object.BackgroundTransparency < 1 then
+			return true
+		elseif object:IsA("ImageLabel") or object:IsA("ImageButton") then
+			return object.Image ~= "" and object.ImageTransparency < 1
+		elseif object:IsA("TextLabel") or object:IsA("TextButton") or object:IsA("TextBox") then
+			return object.Text ~= "" and object.TextTransparency < 1
+		end
+		return false
+	end
+	-- A game's custom cursor is a small image pinned to the pointer (by its centre or corner);
+	-- it's always on top, so it would be picked every time.
+	local function cursorLike(object, position): boolean
+		local size = object.AbsoluteSize
+		if object.Active or size.X > 96 or size.Y > 96 then
+			return false
+		end
+		-- AbsolutePosition is in the same space as the pointer, top bar or not.
+		local at = object.AbsolutePosition
+		return (at + size / 2 - position).Magnitude < 12 or (at - position).Magnitude < 12
+	end
+	-- The game's own UI under the point (the topmost thing you can see), never ours.
+	local function guiAt(position): Instance?
+		local playerGui = State.LocalPlayer and State.LocalPlayer:FindFirstChildOfClass("PlayerGui")
+		if playerGui == nil then
+			return nil
+		end
+		local ok, hits = pcall(playerGui.GetGuiObjectsAtPosition, playerGui, position.X, position.Y)
+		if ok then
+			for _, object in hits do
+				if shows(object) and not cursorLike(object, position) then
+					return object
+				end
+			end
+		end
+		return nil
+	end
+	local function overUs(position): boolean
+		local layer = list:FindFirstAncestor("Layer")
+		return layer ~= nil and Cursor.over(layer, position)
+	end
+	local function pickAt(position, processed: boolean): Instance?
+		if overUs(position) then
+			return nil
+		end
+		return guiAt(position) or (if processed then nil else partAt(position))
+	end
 	local pickConnections = {}
 	local function stopPicking()
 		for _, connection in pickConnections do
@@ -739,36 +935,43 @@ function Explorer.new(scope)
 	end
 	table.insert(
 		scope,
-		scope:Observer(State.Picking):onChange(function()
-			stopPicking()
-			if not peek(State.Picking) then
-				return
+		scope:Observer(State.Picking):onChange(
+			function()
+				stopPicking()
+				if not peek(State.Picking) then
+					return
+				end
+				table.insert(
+					pickConnections,
+					RunService.RenderStepped:Connect(function()
+						local point = UserInputService:GetMouseLocation()
+							- Env.service("GuiService"):GetGuiInset()
+						State.Hovered:set(pickAt(point, false))
+					end)
+				)
+				table.insert(
+					pickConnections,
+					UserInputService.InputBegan:Connect(
+						function(input, processed)
+							local kind = input.UserInputType
+							if kind ~= Enum.UserInputType.MouseButton1
+								and kind ~= Enum.UserInputType.Touch then
+								return
+							end
+							local position = Vector2.new(input.Position.X, input.Position.Y)
+							if overUs(position) then
+								return -- our own buttons, like the card's Cancel
+							end
+							local hit = pickAt(position, processed)
+							setPicking(false)
+							if hit then
+								State.Hooks.reveal(hit)
+							end
+						end
+					)
+				)
 			end
-			table.insert(
-				pickConnections,
-				RunService.RenderStepped:Connect(function()
-					local point = UserInputService:GetMouseLocation()
-						- Env.service("GuiService"):GetGuiInset()
-					State.Hovered:set(partAt(point))
-				end)
-			)
-			table.insert(
-				pickConnections,
-				UserInputService.InputBegan:Connect(function(input, processed)
-					local kind = input.UserInputType
-					if processed
-						or (kind ~= Enum.UserInputType.MouseButton1
-							and kind ~= Enum.UserInputType.Touch) then
-						return
-					end
-					local hit = partAt(input.Position)
-					setPicking(false)
-					if hit then
-						State.Hooks.reveal(hit)
-					end
-				end)
-			)
-		end)
+		)
 	)
 	table.insert(scope, stopPicking)
 

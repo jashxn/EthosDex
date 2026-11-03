@@ -129,12 +129,34 @@ function Activity.new(scope, layer)
 					Order = 2,
 					Icon = "crosshair",
 					Visible = State.Picking,
-					Text = "Click a part in the world to select it",
+					Text = "Click a part or the game's UI to select it",
 					Buttons = button(
 						"Cancel",
 						3,
 						function()
 							State.Picking:set(false)
+						end
+					),
+				}
+			),
+			card(
+				scope,
+				{
+					Name = "PickingValue",
+					Order = 3,
+					Icon = "crosshair",
+					Visible = scope:Computed(function(use)
+						return use(State.PickFor) ~= nil
+					end),
+					Text = scope:Computed(function(use)
+						local pending = use(State.PickFor)
+						return if pending then pending.Text else ""
+					end),
+					Buttons = button(
+						"Cancel",
+						3,
+						function()
+							State.PickFor:set(nil)
 						end
 					),
 				}
@@ -145,8 +167,9 @@ function Activity.new(scope, layer)
 	table.insert(
 		scope,
 		UserInputService.InputBegan:Connect(function(input)
-			if input.KeyCode == Enum.KeyCode.Escape and peek(State.Picking) then
+			if input.KeyCode == Enum.KeyCode.Escape then
 				State.Picking:set(false)
+				State.PickFor:set(nil)
 			end
 		end)
 	)

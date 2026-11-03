@@ -33,6 +33,8 @@ State.MultiSelect = scope:Value(false)
 -- What's going on that the activity card shows: the instance the camera follows, and pick mode.
 State.Viewing = scope:Value(nil)
 State.Picking = scope:Value(false)
+-- Picking a property's new value in the explorer: { Text, Pick = fn(instance) }, or nil.
+State.PickFor = scope:Value(nil)
 -- The instance under the pointer in the explorer, for the hover glow.
 State.Hovered = scope:Value(nil)
 

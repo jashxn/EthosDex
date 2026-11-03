@@ -52,7 +52,12 @@ function Path.of(instance: Instance, game: Instance, localPlayer: Instance?): st
 			)
 			return table.concat(parts)
 		end
-		table.insert(parts, 1, Path.index(current.Name))
+		-- A same-named sibling earlier on would be found instead, so index by position.
+		if parent:FindFirstChild(current.Name) ~= current then
+			table.insert(parts, 1, `:GetChildren()[{table.find(parent:GetChildren(), current)}]`)
+		else
+			table.insert(parts, 1, Path.index(current.Name))
+		end
 		current = parent
 	end
 	return table.concat(parts)

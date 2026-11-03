@@ -384,6 +384,56 @@ function App.start()
 		table.insert(scope, scope:Observer(state):onBind(updateGlows))
 	end
 
+	-- The game's UI can't take a Highlight, so an outline follows the selected or hovered
+	-- GuiObject. The Folder keeps the outlines out of Cursor.over's hit test.
+	local outlines = Instance.new("Folder")
+	outlines.Name = "Outlines"
+	outlines.Parent = layer
+	local function newOutline(transparency)
+		local box = Instance.new("Frame")
+		box.BackgroundTransparency = 1
+		box.Visible = false
+		box.ZIndex = 5
+		local stroke = Instance.new("UIStroke")
+		stroke.Thickness = 2
+		stroke.Transparency = transparency
+		stroke.Parent = box
+		box.Parent = outlines
+		return box
+	end
+	local selectionBox, hoverBox = newOutline(0), newOutline(0.5)
+	local function place(box, object, enabled)
+		local ok, shown = pcall(
+			function()
+				if not (enabled and object and object:IsA("GuiObject") and object.Visible) then
+					return false
+				end
+				local screen = object:FindFirstAncestorWhichIsA("LayerCollector")
+				if screen == nil then
+					return false
+				end
+				-- AbsolutePosition is measured under the top bar for every ScreenGui, like ours.
+				local at = object.AbsolutePosition
+				local s = scale()
+				local origin = layer.AbsolutePosition
+				box.Position = UDim2.fromOffset((at.X - origin.X) / s, (at.Y - origin.Y) / s)
+				box.Size = UDim2.fromOffset(object.AbsoluteSize.X / s, object.AbsoluteSize.Y / s)
+				box.UIStroke.Color = peek(Theme.Accent)
+				return true
+			end
+		)
+		box.Visible = ok and shown
+	end
+	table.insert(
+		scope,
+		Env.service("RunService").RenderStepped:Connect(function()
+			local first = State.first()
+			place(selectionBox, first, Settings.get("SelectionGlow"))
+			local hovered = peek(State.Hovered)
+			place(hoverBox, if hovered ~= first then hovered else nil, Settings.get("HoverGlow"))
+		end)
+	)
+
 	-- The API loads in the background; the tree re-sorts by Studio's order when it lands.
 	task.spawn(function()
 		Api.load()
