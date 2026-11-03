@@ -1,7 +1,6 @@
 --!nocheck
 --[[
-	The explorer: brand header, search and the virtualized tree; plus the credits footer, which
-	the dock places at its bottom.
+	The explorer: brand header, search and the virtualized tree.
 	Rows are a fixed pool, as many as fit on screen, re-bound to whichever nodes are in view, so
 	the cost doesn't grow with the game. A render happens when the tree reports a change, on
 	scroll, and every half second (collapsed nodes don't listen, so their arrows refresh then).
@@ -21,6 +20,7 @@ local ClassIcon = require(script.Parent.classIcon)
 local Menu = require(script.Parent.menu)
 local Toast = require(script.Parent.toast)
 local Actions = require(script.Parent.actions)
+local History = require(script.Parent.history)
 
 local Children = Fusion.Children
 local OnEvent = Fusion.OnEvent
@@ -29,10 +29,10 @@ local peek = Fusion.peek
 local UserInputService = Env.service("UserInputService")
 local RunService = Env.service("RunService")
 
-local ROW = State.ROW
+local ROW = State.rowHeight() -- re-read every render, from the density setting
 local INDENT = 14
 local NIL_ROOT = Tree.NIL_ROOT
-local DISCORD = "jasha.n"
+local MARK_TILE = Color3.fromRGB(15, 15, 18)
 
 local Explorer = {}
 
@@ -40,6 +40,24 @@ function Explorer.new(scope)
 	local tree = nil
 	local dirty = true
 	local hovering = false
+	local hoveredRow = nil
+
+	local markColors = scope:Computed(
+		function(use)
+			-- The theme's accent into the same accent with its hue turned, so both ends follow the theme.
+			local accent = use(Theme.Accent)
+			local hue, saturation, value = accent:ToHSV()
+			return ColorSequence.new(accent, Color3.fromHSV((hue - 0.12) % 1, saturation, value))
+		end
+	)
+	for _, key in { "Density", "ExplorerText", "UIScale" } do
+		table.insert(
+			scope,
+			scope:Observer(Settings.state(key)):onChange(function()
+				dirty = true
+			end)
+		)
+	end
 	local anchor = nil -- instance shift-click ranges start from
 	local lastClick = { Instance = nil, At = 0 }
 
@@ -178,6 +196,7 @@ function Explorer.new(scope)
 		end,
 		[OnEvent("MouseLeave")] = function()
 			hovering = false
+			dirty = true
 		end,
 	})
 	table.insert(
@@ -225,7 +244,7 @@ function Explorer.new(scope)
 
 	local function scrollTo(index: number)
 		local top = list.CanvasPosition.Y
-		local height = list.AbsoluteWindowSize.Y
+		local height = list.AbsoluteWindowSize.Y / State.scale()
 		local y = (index - 1) * ROW
 		if y < top or y + ROW > top + height then
 			list.CanvasPosition = Vector2.new(0, math.max(0, y - height / 2))
@@ -409,10 +428,14 @@ function Explorer.new(scope)
 			end,
 			[OnEvent("MouseEnter")] = function()
 				row.Hovered = true
+				hoveredRow = row
 				dirty = true
 			end,
 			[OnEvent("MouseLeave")] = function()
 				row.Hovered = false
+				if hoveredRow == row then
+					hoveredRow = nil
+				end
 				dirty = true
 			end,
 			[Children] = {
@@ -470,9 +493,11 @@ function Explorer.new(scope)
 
 	local function render()
 		dirty = false
+		ROW = State.rowHeight()
+		local textSize = Settings.get("ExplorerText")
 		flat = tree:flat()
 		list.CanvasSize = UDim2.fromOffset(0, #flat * ROW + 8)
-		local height = list.AbsoluteWindowSize.Y
+		local height = list.AbsoluteWindowSize.Y / State.scale()
 		local first = math.max(1, math.floor(list.CanvasPosition.Y / ROW) + 1)
 		local needed = math.ceil(height / ROW) + 2
 		while #pool < needed do
@@ -506,6 +531,9 @@ function Explorer.new(scope)
 			local depth = node.Depth * INDENT
 			local frame = row.Frame
 			frame.Position = UDim2.fromOffset(2, (index - 1) * ROW + 4)
+			frame.Size = UDim2.new(1, -4, 0, ROW)
+			row.Toggle.Size = UDim2.fromOffset(if State.Touch then 26 else 18, ROW)
+			row.Label.TextSize = textSize
 			frame.Visible = true
 			local open = hasChildren(node)
 			row.Toggle.Position = UDim2.new(0, depth, 0.5, 0)
@@ -525,6 +553,11 @@ function Explorer.new(scope)
 			row.Selected.Visible = selected
 			frame.BackgroundTransparency = if row.Hovered and not selected then 0.95 else 1
 			bindName(row, instance)
+		end
+		-- The hover glow follows the row under the pointer (pick mode drives it instead).
+		if not peek(State.Picking) then
+			local hovered = hoveredRow and hovering and hoveredRow.Node and hoveredRow.Node.Instance
+			State.Hovered:set(if hovered ~= NIL_ROOT then hovered else nil)
 		end
 	end
 
@@ -613,7 +646,7 @@ function Explorer.new(scope)
 		box.BorderSizePixel = 0
 		box.Text = instance.Name
 		box.FontFace = peek(Theme.Body)
-		box.TextSize = 13
+		box.TextSize = Settings.get("ExplorerText")
 		box.TextColor3 = peek(Theme.Ink)
 		box.TextXAlignment = Enum.TextXAlignment.Left
 		box.ClearTextOnFocus = false
@@ -621,10 +654,18 @@ function Explorer.new(scope)
 		box.Parent = row.Frame
 		box:CaptureFocus()
 		box.SelectionStart, box.CursorPosition = 1, #box.Text + 1
+		local before = instance.Name
 		box.FocusLost:Connect(function(enter)
-			if enter and box.Text ~= "" then
+			if enter and box.Text ~= "" and box.Text ~= before then
 				local ok, problem = Env.setProperty(instance, "Name", box.Text)
-				if not ok then
+				if ok then
+					History.push(
+						"rename",
+						function()
+							instance.Name = before
+						end
+					)
+				else
 					Toast.show("Couldn't rename: " .. tostring(problem), "error")
 				end
 			end
@@ -677,114 +718,79 @@ function Explorer.new(scope)
 		tree:collapseAll()
 	end
 
-	-- Pick mode (Dex's "select object"): the next click in the world selects the part under it.
-	local picking = scope:Value(false)
-	local pickConnection = nil
+	-- Pick mode (Dex's "select object"): the part under the pointer glows, and the next click in
+	-- the world selects it. The activity card shows it and cancels it.
+	local function partAt(position): Instance?
+		local camera = workspace.CurrentCamera
+		local ray = camera:ScreenPointToRay(position.X, position.Y)
+		local hit = workspace:Raycast(ray.Origin, ray.Direction * 5000)
+		return hit and hit.Instance
+	end
+	local pickConnections = {}
+	local function stopPicking()
+		for _, connection in pickConnections do
+			connection:Disconnect()
+		end
+		table.clear(pickConnections)
+		State.Hovered:set(nil)
+	end
 	local function setPicking(on: boolean)
-		picking:set(on)
-		if pickConnection then
-			pickConnection:Disconnect()
-			pickConnection = nil
-		end
-		if not on then
-			return
-		end
-		Toast.show("Click a part in the world to select it")
-		pickConnection = UserInputService.InputBegan:Connect(function(input, processed)
-			local kind = input.UserInputType
-			if processed
-				or (kind ~= Enum.UserInputType.MouseButton1 and kind ~= Enum.UserInputType.Touch) then
-				return
-			end
-			local camera = workspace.CurrentCamera
-			local ray = camera:ScreenPointToRay(input.Position.X, input.Position.Y)
-			local hit = workspace:Raycast(ray.Origin, ray.Direction * 5000)
-			setPicking(false)
-			if hit and hit.Instance then
-				State.Hooks.reveal(hit.Instance)
-			end
-		end)
+		State.Picking:set(on)
 	end
 	table.insert(
 		scope,
-		function()
-			setPicking(false)
-		end
-	)
-
-	local footer = scope:New("TextButton")({
-		Name = "Credits",
-		AnchorPoint = Vector2.new(0, 1),
-		Position = UDim2.new(0, 8, 1, -8),
-		Size = UDim2.new(1, -16, 0, 44),
-		BackgroundColor3 = Theme.Ink,
-		BackgroundTransparency = 1,
-		AutoButtonColor = false,
-		Text = "",
-		[OnEvent("Activated")] = function()
-			if Env.clipboard(DISCORD) then
-				Toast.show("Copied Discord username jasha.n", "success")
-			else
-				Toast.show("Discord: jasha.n")
+		scope:Observer(State.Picking):onChange(function()
+			stopPicking()
+			if not peek(State.Picking) then
+				return
 			end
-		end,
-		[Children] = {
-			scope:New("Frame")({
-				Name = "Badge",
-				AnchorPoint = Vector2.new(0, 0.5),
-				Position = UDim2.new(0, 6, 0.5, 0),
-				Size = UDim2.fromOffset(32, 32),
-				BackgroundColor3 = Theme.Ink,
-				BackgroundTransparency = 0.92,
-				[Children] = {
-					scope:New("UICorner")({ CornerRadius = UDim.new(0.5, 0) }),
-					Controls.Icon(
-						scope,
-						"discord",
-						17,
-						{
-							AnchorPoint = Vector2.new(0.5, 0.5),
-							Position = UDim2.fromScale(0.5, 0.5),
-						}
-					),
-				},
-			}),
-			Controls.Label(
-				scope,
-				{
-					Position = UDim2.fromOffset(48, 5),
-					Size = UDim2.new(1, -52, 0, 18),
-					Text = "jashan",
-					TextSize = 13,
-				}
-			),
-			Controls.Label(
-				scope,
-				{
-					Position = UDim2.fromOffset(48, 22),
-					Size = UDim2.new(1, -52, 0, 16),
-					Text = "@" .. DISCORD,
-					TextSize = 12,
-					FontFace = Theme.Body,
-					TextColor3 = Theme.Muted,
-				}
-			),
-		},
-	})
+			table.insert(
+				pickConnections,
+				RunService.RenderStepped:Connect(function()
+					local point = UserInputService:GetMouseLocation()
+						- Env.service("GuiService"):GetGuiInset()
+					State.Hovered:set(partAt(point))
+				end)
+			)
+			table.insert(
+				pickConnections,
+				UserInputService.InputBegan:Connect(function(input, processed)
+					local kind = input.UserInputType
+					if processed
+						or (kind ~= Enum.UserInputType.MouseButton1
+							and kind ~= Enum.UserInputType.Touch) then
+						return
+					end
+					local hit = partAt(input.Position)
+					setPicking(false)
+					if hit then
+						State.Hooks.reveal(hit)
+					end
+				end)
+			)
+		end)
+	)
+	table.insert(scope, stopPicking)
 
 	local header = scope:New("Frame")({
 		Name = "Header",
 		Size = UDim2.new(1, 0, 0, 58),
 		BackgroundTransparency = 1,
 		[Children] = {
+			-- The mark: a dark tile whatever the theme, the E in the theme's accent gradient.
 			scope:New("Frame")({
 				Name = "Mark",
 				AnchorPoint = Vector2.new(0, 0.5),
 				Position = UDim2.new(0, 14, 0.5, 2),
 				Size = UDim2.fromOffset(32, 32),
-				BackgroundColor3 = Theme.Ink,
+				BackgroundColor3 = MARK_TILE,
 				[Children] = {
-					scope:New("UICorner")({ CornerRadius = UDim.new(0.5, 0) }),
+					scope:New("UICorner")({ CornerRadius = UDim.new(0, 8) }),
+					scope:New("UIStroke")({
+						ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+						Color = Color3.new(1, 1, 1),
+						Transparency = 0.9,
+					}),
 					Controls.Icon(
 						scope,
 						"ethos-e",
@@ -792,7 +798,7 @@ function Explorer.new(scope)
 						{
 							AnchorPoint = Vector2.new(0.5, 0.5),
 							Position = UDim2.fromScale(0.5, 0.5),
-							ImageColor3 = Theme.Surface,
+							ImageColor3 = Color3.new(1, 1, 1),
 						}
 					),
 				},
@@ -824,7 +830,12 @@ function Explorer.new(scope)
 				Position = UDim2.new(1, -8, 0.5, 2),
 				Size = UDim2.fromOffset(0, 28),
 				AutomaticSize = Enum.AutomaticSize.X,
+				-- Covers a long title; as see-through as the panel so it doesn't show as a box.
 				BackgroundColor3 = Theme.Surface,
+				BackgroundTransparency = scope:Computed(function(use)
+					return 1 - math.clamp(use(Settings.state("PanelOpacity")), 0.3, 1)
+				end),
+				BorderSizePixel = 0,
 				ZIndex = 2,
 				[Children] = {
 					scope:New("UIListLayout")({
@@ -855,12 +866,12 @@ function Explorer.new(scope)
 						{
 							Name = "Pick",
 							Icon = scope:Computed(function(use)
-								return if use(picking) then "x" else "crosshair"
+								return if use(State.Picking) then "x" else "crosshair"
 							end),
 							Size = 28,
 							LayoutOrder = 2,
 							OnActivated = function()
-								setPicking(not peek(picking))
+								setPicking(not peek(State.Picking))
 							end,
 						}
 					),
@@ -868,6 +879,18 @@ function Explorer.new(scope)
 			}),
 		},
 	})
+	-- Icons draw as a font glyph in a child TextLabel, so the gradient has to sit on that.
+	local markGradient = scope:New("UIGradient")({ Rotation = 45, Color = markColors })
+	local function tintGlyph(child)
+		if child.Name == "IconGlyph" then
+			markGradient.Parent = child
+		end
+	end
+	local markIcon = header.Mark.Icon
+	for _, child in markIcon:GetChildren() do
+		tintGlyph(child)
+	end
+	table.insert(scope, markIcon.ChildAdded:Connect(tintGlyph))
 
 	local pane = scope:New("Frame")({
 		Name = "Explorer",
@@ -882,7 +905,6 @@ function Explorer.new(scope)
 	return {
 		Instance = pane,
 		Header = header,
-		Footer = footer,
 		SearchBox = searchBox,
 		Tree = function()
 			return tree

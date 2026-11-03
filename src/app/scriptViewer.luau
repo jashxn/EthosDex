@@ -42,7 +42,12 @@ local ESCAPES = {
 
 local ScriptViewer = {}
 
-local CHAR = (function()
+local CHAR = 7.8
+
+-- Text size, line height and character width follow the code text size setting.
+local function measure()
+	TEXT = Settings.get("CodeText")
+	LINE = TEXT + 5
 	local ok, size = pcall(
 		TextService.GetTextSize,
 		TextService,
@@ -51,8 +56,9 @@ local CHAR = (function()
 		Enum.Font.RobotoMono,
 		Vector2.new(100000, 100)
 	)
-	return if ok then size.X / 100 else 7.8
-end)()
+	CHAR = if ok then size.X / 100 else TEXT * 0.6
+end
+measure()
 
 local function escape(text: string): string
 	return (string.gsub(text, "[&<>\"']", ESCAPES))
@@ -401,7 +407,7 @@ function ScriptViewer.new(scope)
 	)
 
 	scrollToLine = function(index: number)
-		local height = scroll.AbsoluteWindowSize.Y
+		local height = scroll.AbsoluteWindowSize.Y / State.scale()
 		local y = (index - 1) * LINE + PAD
 		local top = scroll.CanvasPosition.Y
 		if y < top or y + LINE > top + height then
@@ -520,6 +526,14 @@ function ScriptViewer.new(scope)
 
 	local function render()
 		dirty = false
+		if TEXT ~= Settings.get("CodeText") then
+			measure()
+			scroll.CanvasSize = UDim2.new()
+			for _, row in pool do
+				row.Number.TextSize = TEXT
+				row.Code.TextSize = TEXT
+			end
+		end
 		if resetCanvas then
 			resetCanvas = false
 			scroll.CanvasSize = UDim2.new()
@@ -533,7 +547,7 @@ function ScriptViewer.new(scope)
 		local count = if source == "" then 0 else #lines
 		local gutter = #tostring(math.max(count, 1)) * CHAR + PAD * 2
 		local widest = 0
-		local height = scroll.AbsoluteWindowSize.Y
+		local height = scroll.AbsoluteWindowSize.Y / State.scale()
 		local first = math.max(1, math.floor(math.max(0, scroll.CanvasPosition.Y - PAD) / LINE) + 1)
 		local needed = math.ceil(height / LINE) + 2
 		while #pool < needed do
@@ -582,6 +596,14 @@ function ScriptViewer.new(scope)
 			dirty = true
 		end)
 	)
+	for _, key in { "CodeText", "UIScale" } do
+		table.insert(
+			scope,
+			scope:Observer(Settings.state(key)):onChange(function()
+				dirty = true
+			end)
+		)
+	end
 	table.insert(
 		scope,
 		scope:Observer(Theme.Surface):onChange(function()

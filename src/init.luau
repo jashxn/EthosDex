@@ -49,6 +49,8 @@ handle.State = app.State
 handle.Tree = app.Tree
 handle.Window = app.Window
 handle.Dock = app.Dock
+handle.Settings = require(script.core.settings)
+handle.History = require(script.app.history)
 handle.Version = "1.0.0"
 
 genv.__ETHOS_DEX = handle

@@ -19,6 +19,8 @@ local Actions = require(script.actions)
 local Window = require(script.window)
 local Dock = require(script.dock)
 local Cursor = require(script.cursor)
+local Activity = require(script.activity)
+local History = require(script.history)
 local Explorer = require(script.explorer)
 local Properties = require(script.properties)
 local ScriptViewer = require(script.scriptViewer)
@@ -37,9 +39,7 @@ local TABS = { "Script", "Console", "Preview", "Settings" }
 
 local App = {}
 
-local function scale()
-	return 1
-end
+local scale = State.scale
 
 function App.start()
 	local scope = Fusion.scoped(Fusion)
@@ -63,23 +63,42 @@ function App.start()
 	gui.Parent = Env.guiParent()
 	table.insert(scope, gui)
 
+	-- The UI scale: the layer is 1/scale of the screen, scaled back up, so it still covers it and
+	-- everything inside works in layer offsets.
+	local uiScale = Settings.state("UIScale")
 	local layer = scope:New("Frame")({
 		Name = "Layer",
 		Parent = gui,
-		Size = UDim2.fromScale(1, 1),
+		Size = scope:Computed(function(use)
+			local value = math.clamp(use(uiScale), 0.5, 2)
+			return UDim2.fromScale(1 / value, 1 / value)
+		end),
 		BackgroundTransparency = 1,
+		[Children] = scope:New("UIScale")({
+			Scale = scope:Computed(function(use)
+				return math.clamp(use(uiScale), 0.5, 2)
+			end),
+		}),
 	})
 	Menu.setLayer(layer, scale)
 	Toast.setLayer(layer)
 	Picker.setLayer(layer)
 
-	local room = scope:Value(layer.AbsoluteSize)
+	-- The room in layer offsets.
+	local room = scope:Value(layer.AbsoluteSize / scale())
 	local function measure()
-		room:set(layer.AbsoluteSize)
-		State.Compact:set(layer.AbsoluteSize.X < COMPACT_WIDTH)
+		local size = layer.AbsoluteSize / scale()
+		room:set(size)
+		State.Compact:set(size.X < COMPACT_WIDTH)
 	end
 	measure()
 	table.insert(scope, layer:GetPropertyChangedSignal("AbsoluteSize"):Connect(measure))
+	table.insert(
+		scope,
+		scope:Observer(uiScale):onChange(function()
+			task.defer(measure)
+		end)
+	)
 
 	local explorer = Explorer.new(scope)
 
@@ -229,7 +248,6 @@ function App.start()
 			Room = room,
 			Explorer = explorer.Instance,
 			Properties = Properties.new(scope:innerScope()).Instance,
-			Footer = explorer.Footer,
 			Scale = scale,
 		}
 	)
@@ -251,6 +269,7 @@ function App.start()
 		}
 	)
 	window.DragHandle(topbar)
+	Activity.new(scope, layer)
 	Cursor.new(scope, layer)
 
 	local destroy
@@ -300,41 +319,70 @@ function App.start()
 		button.Parent = explorer.Header.Actions
 	end
 
-	-- Keybind
+	-- Keybinds: the toggle key anywhere; Ctrl+Z only with the pointer over our UI, so the game
+	-- keeps the key otherwise.
 	table.insert(
 		scope,
 		UserInputService.InputBegan:Connect(function(input, processed)
-			if processed or UserInputService:GetFocusedTextBox() then
+			if UserInputService:GetFocusedTextBox() then
 				return
 			end
-			if input.KeyCode.Name == Settings.get("ToggleKey") then
+			if not processed and input.KeyCode.Name == Settings.get("ToggleKey") then
 				dock.Toggle()
+			elseif input.KeyCode == Enum.KeyCode.Z
+				and (UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
+					or UserInputService:IsKeyDown(Enum.KeyCode.RightControl))
+				and Cursor.over(
+					layer,
+					UserInputService:GetMouseLocation() - Env.service("GuiService"):GetGuiInset()
+				) then
+				History.undo()
 			end
 		end)
 	)
 
 	-- The first selected part or model glows in the world.
-	local glow = Instance.new("Highlight")
-	glow.Name = "Selection"
-	glow.FillTransparency = 0.85
-	glow.OutlineTransparency = 0
-	glow.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-	glow.Parent = gui
-	table.insert(scope, glow)
-	table.insert(
-		scope,
-		scope:Observer(State.Selection):onBind(function()
-			local first = State.first()
-			local ok, isWorld = pcall(function()
-				return first ~= nil
-					and (first:IsA("BasePart") or first:IsA("Model") and not first:IsA("WorldRoot"))
-					and first:IsDescendantOf(workspace)
-			end)
-			glow.Adornee = if ok and isWorld then first else nil
-			glow.OutlineColor = peek(Theme.Accent)
-			glow.FillColor = peek(Theme.Accent)
+	-- The instance under the pointer in the explorer (or in pick mode) glows fainter.
+	local function inWorld(object): boolean
+		local ok, result = pcall(function()
+			return object ~= nil
+				and (object:IsA("BasePart") or object:IsA("Model") and not object:IsA("WorldRoot"))
+				and object:IsDescendantOf(workspace)
 		end)
-	)
+		return ok and result
+	end
+	local function newGlow(name, fill, outline)
+		local glow = Instance.new("Highlight")
+		glow.Name = name
+		glow.FillTransparency = fill
+		glow.OutlineTransparency = outline
+		glow.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+		glow.Parent = gui
+		table.insert(scope, glow)
+		return glow
+	end
+	local glow = newGlow("Selection", 0.85, 0)
+	local hoverGlow = newGlow("Hover", 0.93, 0.5)
+	local function updateGlows()
+		local first = State.first()
+		glow.Adornee = if Settings.get("SelectionGlow") and inWorld(first) then first else nil
+		local hovered = peek(State.Hovered)
+		hoverGlow.Adornee = if Settings.get("HoverGlow") and hovered ~= first and inWorld(hovered) then hovered
+			else nil
+		for _, highlight in { glow, hoverGlow } do
+			highlight.OutlineColor = peek(Theme.Accent)
+			highlight.FillColor = peek(Theme.Accent)
+		end
+	end
+	for _, state in {
+		State.Selection,
+		State.Hovered,
+		Settings.state("SelectionGlow"),
+		Settings.state("HoverGlow"),
+		Theme.Accent,
+	} do
+		table.insert(scope, scope:Observer(state):onBind(updateGlows))
+	end
 
 	-- The API loads in the background; the tree re-sorts by Studio's order when it lands.
 	task.spawn(function()

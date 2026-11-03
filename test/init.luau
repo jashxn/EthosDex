@@ -300,4 +300,54 @@ test(
 	end
 )
 
+test(
+	"history",
+	function()
+		local History = require(script.EthosDex.app.history)
+		History.clear()
+		local order = {}
+		History.push(
+			"first",
+			function()
+				table.insert(order, 1)
+			end
+		)
+		History.push(
+			"second",
+			function()
+				table.insert(order, 2)
+			end
+		)
+		History.push(
+			"broken",
+			function()
+				error("nope")
+			end
+		)
+		check("broken undo reports", History.undo() == false)
+		check("undo returns ok", History.undo() == true)
+		History.undo()
+		check("newest first", order[1] == 2 and order[2] == 1, table.concat(order, ","))
+		check("empty undo", History.undo() == false and History.size() == 0)
+		for index = 1, 60 do
+			History.push(
+				tostring(index),
+				function()
+				end
+			)
+		end
+		check("capped", History.size() == 50, History.size())
+		History.clear()
+
+		local State = require(script.EthosDex.app.state)
+		local Settings = require(script.EthosDex.core.settings)
+		local was = Settings.get("Density")
+		Settings.set("Density", "Compact")
+		local compact = State.rowHeight()
+		Settings.set("Density", "Comfortable")
+		check("density changes rows", State.rowHeight() > compact)
+		Settings.set("Density", was)
+	end
+)
+
 return results

@@ -21,6 +21,7 @@ local Menu = require(script.Parent.menu)
 local Picker = require(script.Parent.picker)
 local Toast = require(script.Parent.toast)
 local Actions = require(script.Parent.actions)
+local History = require(script.Parent.history)
 
 local Children = Fusion.Children
 local OnEvent = Fusion.OnEvent
@@ -29,7 +30,7 @@ local peek = Fusion.peek
 local RunService = Env.service("RunService")
 local CollectionService = Env.service("CollectionService")
 
-local ROW = State.ROW + 4
+local ROW = State.rowHeight() + 4 -- re-read every render, from the density setting
 local ORDER = {
 	"Data",
 	"Appearance",
@@ -189,19 +190,40 @@ function Properties.new(scope)
 		return Env.getProperty(target, entry.Name)
 	end
 
+	local function set(object, entry, value)
+		if entry.Kind == "attr" then
+			return pcall(object.SetAttribute, object, entry.Name, value)
+		end
+		return Env.setProperty(object, entry.Name, value)
+	end
+
 	local function write(entry, value)
 		local failures, problem = 0, nil
+		local before = {}
 		for _, object in State.selection() do
-			local ok, failure
-			if entry.Kind == "attr" then
-				ok, failure = pcall(object.SetAttribute, object, entry.Name, value)
-			else
-				ok, failure = Env.setProperty(object, entry.Name, value)
-			end
-			if not ok then
+			local had, old = if entry.Kind == "attr" then pcall(
+					object.GetAttribute,
+					object,
+					entry.Name
+				)
+				else Env.getProperty(object, entry.Name)
+			local ok, failure = set(object, entry, value)
+			if ok and had then
+				table.insert(before, { object, old })
+			elseif not ok then
 				failures += 1
 				problem = failure
 			end
+		end
+		if #before > 0 then
+			History.push(
+				`edit {entry.Name}`,
+				function()
+					for _, pair in before do
+						set(pair[1], entry, pair[2])
+					end
+				end
+			)
 		end
 		if failures > 0 then
 			Toast.show(`Couldn't set {entry.Name}: {problem}`, "error")
@@ -705,11 +727,18 @@ function Properties.new(scope)
 		if target == nil then
 			return
 		end
+		ROW = State.rowHeight() + 4
+		local textSize = Settings.get("PropertiesText")
 		list.CanvasSize = UDim2.fromOffset(0, #entries * ROW + 8)
-		local width = list.AbsoluteWindowSize.X
-		local nameWidth = math.clamp(math.floor(width * 0.42), 96, 220)
+		local scale = State.scale()
+		local width = list.AbsoluteWindowSize.X / scale
+		local nameWidth = math.clamp(
+			math.floor(width * Settings.get("NameColumn")),
+			80,
+			math.max(80, width - 110)
+		)
 		local valueX = nameWidth + 8
-		local height = list.AbsoluteWindowSize.Y
+		local height = list.AbsoluteWindowSize.Y / scale
 		local first = math.max(1, math.floor(list.CanvasPosition.Y / ROW) + 1)
 		local needed = math.ceil(height / ROW) + 2
 		while #pool < needed do
@@ -732,6 +761,11 @@ function Properties.new(scope)
 			row.Entry = entry
 			frame.Visible = true
 			frame.Position = UDim2.fromOffset(2, (index - 1) * ROW + 4)
+			frame.Size = UDim2.new(1, -4, 0, ROW)
+			row.Name.TextSize = textSize
+			row.Box.TextSize = textSize
+			row.EnumCaption.TextSize = textSize
+			row.Link.TextSize = textSize
 			if entry.Kind == "header" then
 				frame.BackgroundTransparency = 0.97
 				row.Fold.Visible = true
@@ -818,6 +852,14 @@ function Properties.new(scope)
 			dirty = true
 		end)
 	)
+	for _, key in { "Density", "PropertiesText", "NameColumn", "UIScale" } do
+		table.insert(
+			scope,
+			scope:Observer(Settings.state(key)):onChange(function()
+				dirty = true
+			end)
+		)
+	end
 
 	local pane = scope:New("Frame")({
 		Name = "Properties",

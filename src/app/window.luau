@@ -34,6 +34,9 @@ local Window = {}
 
 -- props: Name, Position, Size, Visible, ZIndex, Children (inside the body).
 function Window.chrome(scope, props)
+	local clear = scope:Computed(function(use)
+		return 1 - math.clamp(use(Settings.state("PanelOpacity")), 0.3, 1)
+	end)
 	return scope:New("Frame")({
 		Name = props.Name,
 		Parent = props.Parent,
@@ -50,7 +53,9 @@ function Window.chrome(scope, props)
 				BackgroundTransparency = 1,
 				Image = Icons.shadow,
 				ImageColor3 = Color3.new(0, 0, 0),
-				ImageTransparency = 0.6,
+				ImageTransparency = scope:Computed(function(use)
+					return 0.6 + 0.4 * use(clear)
+				end),
 				ScaleType = Enum.ScaleType.Slice,
 				SliceCenter = Rect.new(164, 164, 166, 166),
 				SliceScale = 0.25,
@@ -59,6 +64,7 @@ function Window.chrome(scope, props)
 				Name = "Body",
 				Size = UDim2.fromScale(1, 1),
 				BackgroundColor3 = Theme.Surface,
+				BackgroundTransparency = clear,
 				ClipsDescendants = true,
 				BorderSizePixel = 0,
 				Active = true,
@@ -68,6 +74,7 @@ function Window.chrome(scope, props)
 						Name = "Low",
 						Size = UDim2.fromScale(1, 1),
 						BackgroundColor3 = Theme.SurfaceLow,
+						BackgroundTransparency = clear,
 						BorderSizePixel = 0,
 						[Children] = {
 							scope:New("UICorner")({ CornerRadius = UDim.new(0, RADIUS) }),
@@ -120,25 +127,33 @@ function Window.new(scope, props)
 	end
 
 	-- The window's rectangle as drawn: phone fills the screen, maximized fills what the dock leaves.
-	local rect = scope:Computed(function(use)
-		local space = use(room)
-		local free = Vector2.new(math.max(MIN.X + 24, space.X - use(props.Reserve)), space.Y)
-		if use(compact) then
-			return { At = Vector2.new(6, 6), Size = space - Vector2.new(12, 12) }
-		elseif use(maximized) then
-			return { At = Vector2.new(12, 12), Size = free - Vector2.new(24, 24) }
+	local rect = scope:Computed(
+		function(use)
+			local space = use(room)
+			local reserve = use(props.Reserve)
+			local free = Vector2.new(math.max(MIN.X + 24, space.X - reserve), space.Y)
+			-- The free space starts after the dock when it's on the left.
+			local origin = Vector2.new(
+				if use(Settings.state("DockSide")) == "Left" then reserve else 0,
+				0
+			)
+			if use(compact) then
+				return { At = Vector2.new(6, 6), Size = space - Vector2.new(12, 12) }
+			elseif use(maximized) then
+				return { At = origin + Vector2.new(12, 12), Size = free - Vector2.new(24, 24) }
+			end
+			local shown = Vector2.new(
+				math.clamp(use(size).X, MIN.X, math.max(MIN.X, free.X - 24)),
+				math.clamp(use(size).Y, MIN.Y, math.max(MIN.Y, space.Y - 16))
+			)
+			local at = use(offset) or origin + (free - shown) / 2
+			at = Vector2.new(
+				math.clamp(at.X, 8 - shown.X + 120, space.X - 120),
+				math.clamp(at.Y, 0, space.Y - 48)
+			)
+			return { At = at, Size = shown }
 		end
-		local shown = Vector2.new(
-			math.clamp(use(size).X, MIN.X, math.max(MIN.X, free.X - 24)),
-			math.clamp(use(size).Y, MIN.Y, math.max(MIN.Y, space.Y - 16))
-		)
-		local at = use(offset) or (free - shown) / 2
-		at = Vector2.new(
-			math.clamp(at.X, 8 - shown.X + 120, space.X - 120),
-			math.clamp(at.Y, 0, space.Y - 48)
-		)
-		return { At = at, Size = shown }
-	end)
+	)
 
 	local function beginDrag(input)
 		if not Pointer.isPress(input) or peek(compact) or peek(maximized) then

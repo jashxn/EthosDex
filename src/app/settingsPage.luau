@@ -60,6 +60,59 @@ function SettingsPage.new(scope)
 		)
 	end
 
+	-- A setting with a few values: the row shows the current one and opens a menu of them.
+	-- options: { { Value, Text } }
+	local function choiceRow(key: string, title: string, description: string?, options)
+		local state = Settings.state(key)
+		return Controls.Row(
+			scope,
+			{
+				Title = title,
+				Description = description,
+				Detail = scope:Computed(function(use)
+					local current = use(state)
+					for _, option in options do
+						if option[1] == current then
+							return option[2]
+						end
+					end
+					return tostring(current)
+				end),
+				Chevron = true,
+				OnActivated = function()
+					local items = {}
+					for _, option in options do
+						table.insert(
+							items,
+							{
+								Text = option[2],
+								Icon = if Settings.get(key) == option[1] then "check" else nil,
+								OnActivated = function()
+									Settings.set(key, option[1])
+								end,
+							}
+						)
+					end
+					Menu.open(
+						UserInputService:GetMouseLocation()
+							- Env.service("GuiService"):GetGuiInset(),
+						items
+					)
+				end,
+			}
+		)
+	end
+	local function sizes(from: number, to: number, default: number)
+		local options = {}
+		for size = from, to do
+			table.insert(
+				options,
+				{ size, if size == default then `{size} (default)` else tostring(size) }
+			)
+		end
+		return options
+	end
+
 	local listening = scope:Value(false)
 	local keyText = scope:Computed(function(use)
 		return if use(listening) then "Press a key" else use(Settings.state("ToggleKey"))
@@ -126,6 +179,42 @@ function SettingsPage.new(scope)
 							end,
 						}
 					),
+					choiceRow(
+						"UIScale",
+						"UI scale",
+						"Everything, bigger or smaller",
+						{
+							{ 0.8, "80%" },
+							{ 0.9, "90%" },
+							{ 1, "100%" },
+							{ 1.1, "110%" },
+							{ 1.25, "125%" },
+							{ 1.5, "150%" },
+						}
+					),
+					choiceRow(
+						"PanelOpacity",
+						"Panel opacity",
+						"See the game through the panels",
+						{
+							{ 1, "Solid" },
+							{ 0.9, "90%" },
+							{ 0.8, "80%" },
+							{ 0.7, "70%" },
+							{ 0.55, "55%" },
+						}
+					),
+					choiceRow(
+						"DockSide",
+						"Dock side",
+						"Which edge the explorer and properties sit on",
+						{ { "Right", "Right" }, { "Left", "Left" } }
+					),
+					switchRow(
+						"CustomCursor",
+						"Cursor over the panels",
+						"Draws an arrow over Ethos Dex in games that hide the cursor"
+					),
 				},
 			}
 		),
@@ -134,6 +223,27 @@ function SettingsPage.new(scope)
 			{
 				Title = "Explorer",
 				Rows = {
+					choiceRow(
+						"Density",
+						"Row height",
+						"For the explorer and properties",
+						{
+							{ "Compact", "Compact" },
+							{ "Default", "Default" },
+							{ "Comfortable", "Comfortable" },
+						}
+					),
+					choiceRow("ExplorerText", "Text size", nil, sizes(11, 17, 13)),
+					switchRow(
+						"SelectionGlow",
+						"Glow on the selection",
+						"Outlines the selected part or model in the world"
+					),
+					switchRow(
+						"HoverGlow",
+						"Glow on hover",
+						"Outlines what's under the pointer in the explorer"
+					),
 					switchRow(
 						"ShowNil",
 						"Nil instances",
@@ -161,6 +271,18 @@ function SettingsPage.new(scope)
 			{
 				Title = "Properties",
 				Rows = {
+					choiceRow("PropertiesText", "Text size", nil, sizes(11, 17, 13)),
+					choiceRow(
+						"NameColumn",
+						"Name column",
+						"How much of the width names get",
+						{
+							{ 0.3, "30%" },
+							{ 0.42, "42% (default)" },
+							{ 0.5, "50%" },
+							{ 0.6, "60%" },
+						}
+					),
 					switchRow(
 						"ShowHidden",
 						"Hidden properties",
@@ -176,6 +298,7 @@ function SettingsPage.new(scope)
 			{
 				Title = "Scripts",
 				Rows = {
+					choiceRow("CodeText", "Code text size", nil, sizes(11, 18, 13)),
 					Controls.Row(
 						scope,
 						{
@@ -256,6 +379,20 @@ function SettingsPage.new(scope)
 									end
 								end)
 								table.insert(scope, connection)
+							end,
+						}
+					),
+					Controls.Row(
+						scope,
+						{
+							Title = "Reset settings",
+							Description = "Back to the defaults; keeps the key and panel sizes",
+							Icon = "rotate-ccw",
+							Chevron = true,
+							OnActivated = function()
+								Settings.reset()
+								State.Hooks.rebuildTree()
+								Toast.show("Settings reset", "success")
 							end,
 						}
 					),

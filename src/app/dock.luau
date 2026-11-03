@@ -1,12 +1,12 @@
 --!nocheck
 --[[
-	Dex's layout: one panel docked to the right edge, the explorer on top and the properties
-	below, a splitter between them and a grip on the left edge to widen it. On phones it takes the
-	screen's width. Hidden, it leaves a floating bubble (the only way back on touch).
+	Dex's layout: one panel docked to the right (or left, in settings) edge, the explorer on top
+	and the properties below, a splitter between them and a grip on the inner edge to widen it.
+	On phones it takes the screen's width. Hidden, it leaves a floating bubble (the only way back
+	on touch).
 
-	props: Layer, Room (Value of the layer's size), Explorer (frame), Properties (frame),
-	Footer (frame), Scale ().
-	Returns { Instance, Open (Value), Toggle (), Reserve (Computed: px it takes on the right) }.
+	props: Layer, Room (Value of the layer's size), Explorer (frame), Properties (frame), Scale ().
+	Returns { Instance, Open (Value), Toggle (), Reserve (Computed: px it takes on its side) }.
 ]]
 
 local Root = script.Parent.Parent
@@ -24,7 +24,7 @@ local peek = Fusion.peek
 
 local MARGIN = 8
 local INSET = 8
-local FOOTER = 56
+local FOOTER = INSET -- the gap under the properties card
 local WIDTH_MIN = 260
 local SECTION_MIN = 120
 
@@ -47,7 +47,10 @@ function Dock.new(scope, props)
 	local height = scope:Computed(function(use)
 		return use(room).Y - MARGIN * 2
 	end)
-	-- The explorer's height; the properties get the rest above the footer.
+	local left = scope:Computed(function(use)
+		return use(Settings.state("DockSide")) == "Left"
+	end)
+	-- The explorer's height; the properties get the rest.
 	local topHeight = scope:Computed(function(use)
 		local free = use(height) - FOOTER
 		return math.round(
@@ -75,6 +78,13 @@ function Dock.new(scope, props)
 	local edgeHover = scope:Value(false)
 	local edge = scope:New("TextButton")({
 		Name = "WidthGrip",
+		-- On the inner edge: the left one when docked right.
+		AnchorPoint = scope:Computed(function(use)
+			return Vector2.new(if use(left) then 1 else 0, 0)
+		end),
+		Position = scope:Computed(function(use)
+			return UDim2.fromScale(if use(left) then 1 else 0, 0)
+		end),
 		Size = UDim2.new(0, 8, 1, 0),
 		BackgroundTransparency = 1,
 		Text = "",
@@ -97,8 +107,9 @@ function Dock.new(scope, props)
 			Pointer.drag(
 				scope,
 				function(point)
-					-- Docked to the right, so dragging left widens it.
-					width:set(math.max(WIDTH_MIN, from - (point.X - start) / props.Scale()))
+					-- Dragging away from the docked edge widens it.
+					local moved = (point.X - start) / props.Scale()
+					width:set(math.max(WIDTH_MIN, from + (if peek(left) then moved else -moved)))
 				end,
 				function()
 					Settings.set("DockWidth", math.round(peek(shownWidth)))
@@ -176,7 +187,9 @@ function Dock.new(scope, props)
 			Name = "Dock",
 			Parent = props.Layer,
 			Position = scope:Computed(function(use)
-				return UDim2.fromOffset(use(room).X - use(shownWidth) - MARGIN, MARGIN)
+				local x = if use(left) and not use(compact) then MARGIN
+					else use(room).X - use(shownWidth) - MARGIN
+				return UDim2.fromOffset(x, MARGIN)
 			end),
 			Size = scope:Computed(function(use)
 				return UDim2.fromOffset(use(shownWidth), use(height))
@@ -187,7 +200,6 @@ function Dock.new(scope, props)
 				props.Explorer,
 				splitter,
 				properties,
-				props.Footer,
 				edge,
 				-- A visible Modal button frees a locked mouse (first person, shift lock) while open.
 				scope:New("TextButton")({
@@ -204,9 +216,11 @@ function Dock.new(scope, props)
 	-- The floating bubble: shown while the dock is hidden; drag it anywhere, tap to reopen.
 	local bubbleAt = scope:Value(nil)
 	local bubbleMoved = false
+	local function home(space: Vector2, onLeft: boolean): Vector2
+		return Vector2.new(if onLeft then 40 else space.X - 40, space.Y * 0.35)
+	end
 	local function bubbleHome()
-		local space = peek(room)
-		return Vector2.new(space.X - 40, space.Y * 0.35)
+		return home(peek(room), peek(left))
 	end
 	scope:New("TextButton")({
 		Name = "Bubble",
@@ -214,7 +228,7 @@ function Dock.new(scope, props)
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = scope:Computed(function(use)
 			local space = use(room)
-			local at = use(bubbleAt) or Vector2.new(space.X - 40, space.Y * 0.35)
+			local at = use(bubbleAt) or home(space, use(left))
 			return UDim2.fromOffset(
 				math.clamp(at.X, 24, space.X - 24),
 				math.clamp(at.Y, 24, space.Y - 24)

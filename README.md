@@ -20,6 +20,10 @@ The layout follows Dex. A panel docks to the right edge, with the explorer on to
 - **Preview.** Orbit view of models and parts.
 - **Actions.** Copy path, rename, cut, copy and paste into (Ctrl+X/C/V), duplicate (Ctrl+D), group, delete, insert, teleport, view (the camera follows it), fire click detectors, proximity prompts and touches, save scripts and bytecode, and save the place or a selection (the executor's `saveinstance`, or SynSaveInstance).
 - **Themes.** About 50. On narrow screens, the panel takes the full width and the window fills the screen.
+- **Undo.** Ctrl+Z (with the pointer over the panels) undoes deletes, renames, pastes, duplicates, inserts and property edits, up to the last 50.
+- **Activity card.** While you view something or pick from the world, a card at the top shows it, with Stop or Cancel right there.
+- **Glow.** The selected part or model glows in the world, and whatever the pointer is over in the explorer glows fainter. You can turn either off.
+- **Settings.** UI scale, panel opacity, dock side (right or left), row height, text size for the explorer, properties and code, the property name column, the glows and the cursor. Reset puts them back.
 
 ## Executor support
 

@@ -19,7 +19,7 @@ local UserInputService = Env.service("UserInputService")
 
 local ITEM = if State.Touch then 36 else 30
 local WIDTH = 220
-local MAX_HEIGHT = 360
+local MAX_HEIGHT = 600
 
 local Menu = {}
 local current = nil
@@ -144,10 +144,10 @@ function Menu.open(position: Vector2, entries)
 	for _, entry in entries do
 		height += if entry == "divider" then 9 else ITEM
 	end
-	local shown = math.min(height, MAX_HEIGHT)
 	-- The layer is full screen under the UI scale: screen points divide by it.
 	local room = layer.AbsoluteSize
 	local scale = layerScale()
+	local shown = math.min(height, MAX_HEIGHT, room.Y / scale - 16)
 	local point = (position - layer.AbsolutePosition) / scale
 	local x = math.clamp(point.X, 4, math.max(4, room.X / scale - WIDTH - 4))
 	local y = point.Y

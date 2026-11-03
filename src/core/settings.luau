@@ -23,6 +23,18 @@ local DEFAULTS = {
 	WindowWidth = 640,
 	WindowHeight = 440,
 	SaveDecompile = true,
+	-- Look and feel
+	UIScale = 1,
+	PanelOpacity = 1, -- 1 is solid
+	DockSide = "Right",
+	Density = "Default", -- row height: Compact, Default or Comfortable
+	ExplorerText = 13,
+	PropertiesText = 13,
+	CodeText = 13,
+	NameColumn = 0.42, -- the property name column's share of the width
+	SelectionGlow = true,
+	HoverGlow = true,
+	CustomCursor = true,
 }
 
 local Settings = {}
@@ -78,6 +90,22 @@ end
 
 function Settings.state(key: string)
 	return values[key]
+end
+
+-- Back to the defaults, except where the panels are and which key opens them.
+local KEEP = {
+	ToggleKey = true,
+	DockWidth = true,
+	DockSplit = true,
+	WindowWidth = true,
+	WindowHeight = true,
+}
+function Settings.reset()
+	for key, default in DEFAULTS do
+		if not KEEP[key] then
+			values[key]:set(default)
+		end
+	end
 end
 
 Settings.DEFAULTS = table.freeze(DEFAULTS)

@@ -5,6 +5,7 @@ local Root = script.Parent.Parent
 local Fusion = require(Root.packages.fusion)
 local Internal = require(Root.packages.internal)
 local Env = require(Root.core.env)
+local Settings = require(Root.core.settings)
 
 local scope = Internal.Scope
 local peek = Fusion.peek
@@ -29,7 +30,22 @@ State.Touch = UserInputService.TouchEnabled and not UserInputService.KeyboardEna
 -- Tap adds to the selection instead of replacing it (touch has no Ctrl).
 State.MultiSelect = scope:Value(false)
 
-State.ROW = if State.Touch then 32 else 24
+-- What's going on that the activity card shows: the instance the camera follows, and pick mode.
+State.Viewing = scope:Value(nil)
+State.Picking = scope:Value(false)
+-- The instance under the pointer in the explorer, for the hover glow.
+State.Hovered = scope:Value(nil)
+
+-- Explorer row height for the density setting; touch rows are taller.
+local DENSITY = { Compact = 20, Default = 24, Comfortable = 30 }
+function State.rowHeight(): number
+	return (DENSITY[Settings.get("Density")] or 24) + (if State.Touch then 8 else 0)
+end
+
+-- The UI scale; screen pixels divide by it to get layer offsets.
+function State.scale(): number
+	return math.clamp(Settings.get("UIScale"), 0.5, 2)
+end
 
 function State.selection(): { Instance }
 	return peek(State.Selection)

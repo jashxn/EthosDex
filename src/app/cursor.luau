@@ -8,6 +8,7 @@
 
 local Root = script.Parent.Parent
 local Env = require(Root.core.env)
+local Settings = require(Root.core.settings)
 local State = require(script.Parent.state)
 
 local UserInputService = Env.service("UserInputService")
@@ -57,14 +58,22 @@ function Cursor.new(scope, layer: Frame)
 
 	table.insert(
 		scope,
-		RunService.RenderStepped:Connect(function()
-			local point = UserInputService:GetMouseLocation() - GuiService:GetGuiInset()
-			local show = not UserInputService.MouseIconEnabled and Cursor.over(layer, point)
-			arrow.Visible = show
-			if show then
-				arrow.Position = UDim2.fromOffset(point.X, point.Y)
+		RunService.RenderStepped:Connect(
+			function()
+				local point = UserInputService:GetMouseLocation() - GuiService:GetGuiInset()
+				local show = Settings.get("CustomCursor")
+					and not UserInputService.MouseIconEnabled
+					and Cursor.over(layer, point)
+				arrow.Visible = show
+				if show then
+					-- The arrow keeps its size whatever the UI scale.
+					local scale = State.scale()
+					local at = (point - layer.AbsolutePosition) / scale
+					arrow.Position = UDim2.fromOffset(at.X, at.Y)
+					arrow.Size = UDim2.fromOffset(64 / scale, 64 / scale)
+				end
 			end
-		end)
+		)
 	)
 	return arrow
 end
