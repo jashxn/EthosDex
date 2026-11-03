@@ -18,9 +18,10 @@ local DEFAULTS = {
 	ShowDeprecated = false,
 	ShowNil = true,
 	ToggleKey = "RightControl",
-	ExplorerWidth = 300,
-	WindowWidth = 980,
-	WindowHeight = 600,
+	DockWidth = 320,
+	DockSplit = 0.5, -- the explorer's share of the dock's height
+	WindowWidth = 640,
+	WindowHeight = 440,
 	SaveDecompile = true,
 }
 

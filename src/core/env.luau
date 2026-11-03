@@ -130,6 +130,12 @@ local raw = {
 	delfile = pick("delfile"),
 	request = pick("request", "http_request", "syn.request", "http.request", "fluxus.request"),
 	loadstring = pick("loadstring"),
+	base64encode = pick(
+		"crypt.base64encode",
+		"crypt.base64.encode",
+		"base64_encode",
+		"base64encode"
+	),
 	getsenv = pick("getsenv"),
 	getconnections = pick("getconnections", "get_signal_cons"),
 	firesignal = pick("firesignal"),
@@ -404,6 +410,61 @@ local function konstant(object: Instance): (string?, string?)
 	return response.Body, nil
 end
 
+local B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+
+-- The executor's base64 when it has one, else this one.
+function Env.base64(data: string): string
+	if raw.base64encode then
+		local ok, out = pcall(raw.base64encode, data)
+		if ok and type(out) == "string" then
+			return out
+		end
+	end
+	local out = table.create(math.ceil(#data / 3))
+	for index = 1, #data, 3 do
+		local a, b, c = string.byte(data, index, index + 2)
+		local n = a * 65536 + (b or 0) * 256 + (c or 0)
+		local function at(shift)
+			local i = bit32.extract(n, shift, 6) + 1
+			return string.sub(B64, i, i)
+		end
+		table.insert(
+			out,
+			at(18) .. at(12) .. (if b then at(6) else "=") .. (if c then at(0) else "=")
+		)
+	end
+	return table.concat(out)
+end
+
+local LUA_EXPERT = "https://api.lua.expert/decompile"
+
+-- The lua.expert web decompiler (what VEX Explorer uses): base64 bytecode in, source out.
+local function luaExpert(object: Instance): (string?, string?)
+	local bytecode, problem = Env.bytecode(object)
+	if bytecode == nil then
+		return nil, problem
+	end
+	if raw.request == nil then
+		return nil, "This executor has no request function for the web decompiler."
+	end
+	local response, failure = Env.request({
+		Url = LUA_EXPERT,
+		Method = "POST",
+		Body = Env.jsonEncode({ script = Env.base64(bytecode) }),
+		Headers = { ["Content-Type"] = "application/json" },
+	})
+	if response == nil then
+		return nil, failure
+	elseif response.StatusCode == 0 or response.StatusCode == nil then
+		return nil, "Couldn't reach lua.expert; it may be down."
+	elseif response.StatusCode ~= 200 then
+		return
+			nil,
+			`lua.expert answered {response.StatusCode}: {string.sub(tostring(response.Body), 1, 200)}`
+	end
+	return response.Body, nil
+end
+
 local function native(object: Instance): (string?, string?)
 	if raw.decompile == nil then
 		return nil, "This executor has no decompiler."
@@ -459,21 +520,23 @@ local function advanced(object: Instance): (string?, string?)
 	return source, nil
 end
 
-Env.DECOMPILERS = table.freeze({ "Auto", "Executor", "Advanced", "Konstant" })
+Env.DECOMPILERS = table.freeze({ "Auto", "Executor", "Advanced", "lua.expert", "Konstant" })
+local DECOMPILE = {
+	Executor = native,
+	Advanced = advanced,
+	["lua.expert"] = luaExpert,
+	Konstant = konstant,
+}
 
--- `mode`: "Auto" tries the executor's decompiler, then Advanced Decompiler, then Konstant; the
--- others use only that one.
+-- `mode`: "Auto" tries the executor's decompiler, then Advanced Decompiler (local), then the two
+-- web decompilers; the others use only that one.
 function Env.decompile(object: Instance, mode: string?): (string?, string?)
-	mode = mode or "Auto"
-	if mode == "Executor" then
-		return native(object)
-	elseif mode == "Advanced" then
-		return advanced(object)
-	elseif mode == "Konstant" then
-		return konstant(object)
+	local only = DECOMPILE[mode or "Auto"]
+	if only then
+		return only(object)
 	end
 	local problems = {}
-	for _, attempt in { native, advanced, konstant } do
+	for _, attempt in { native, advanced, luaExpert, konstant } do
 		local source, problem = attempt(object)
 		if source then
 			return source, nil

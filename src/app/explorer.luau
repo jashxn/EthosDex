@@ -1,6 +1,7 @@
 --!nocheck
 --[[
-	The explorer column: brand header, search, the virtualized tree and the credits footer.
+	The explorer: brand header, search and the virtualized tree; plus the credits footer, which
+	the dock places at its bottom.
 	Rows are a fixed pool, as many as fit on screen, re-bound to whichever nodes are in view, so
 	the cost doesn't grow with the game. A render happens when the tree reports a change, on
 	scroll, and every half second (collapsed nodes don't listen, so their arrows refresh then).
@@ -162,7 +163,7 @@ function Explorer.new(scope)
 	local list = scope:New("ScrollingFrame")({
 		Name = "Tree",
 		Position = UDim2.fromOffset(4, 104),
-		Size = UDim2.new(1, -8, 1, -104 - 58),
+		Size = UDim2.new(1, -8, 1, -104 - 4),
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		CanvasSize = UDim2.new(),
@@ -539,7 +540,8 @@ function Explorer.new(scope)
 		end)
 	)
 
-	-- Keyboard: arrows move and open, F2 renames, Delete deletes, while the pointer is over the list.
+	-- Keyboard, while the pointer is over the list: arrows move and open, F2 renames, Delete
+	-- deletes, Ctrl+C/X/V copy, cut and paste into, Ctrl+D duplicates.
 	table.insert(
 		scope,
 		UserInputService.InputBegan:Connect(function(input, processed)
@@ -572,6 +574,16 @@ function Explorer.new(scope)
 				State.Hooks.rename(current)
 			elseif key == Enum.KeyCode.Delete and current then
 				Actions.delete(State.selection())
+			elseif current
+				and (UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
+					or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)) then
+				if key == Enum.KeyCode.C or key == Enum.KeyCode.X then
+					Actions.hold(State.selection(), key == Enum.KeyCode.X)
+				elseif key == Enum.KeyCode.V then
+					Actions.paste(current)
+				elseif key == Enum.KeyCode.D then
+					Actions.duplicate(State.selection())
+				end
 			end
 		end)
 	)
@@ -665,25 +677,40 @@ function Explorer.new(scope)
 		tree:collapseAll()
 	end
 
-	-- Phones: a pill to open the panel for the selection.
-	local inspect = Controls.Button(
+	-- Pick mode (Dex's "select object"): the next click in the world selects the part under it.
+	local picking = scope:Value(false)
+	local pickConnection = nil
+	local function setPicking(on: boolean)
+		picking:set(on)
+		if pickConnection then
+			pickConnection:Disconnect()
+			pickConnection = nil
+		end
+		if not on then
+			return
+		end
+		Toast.show("Click a part in the world to select it")
+		pickConnection = UserInputService.InputBegan:Connect(function(input, processed)
+			local kind = input.UserInputType
+			if processed
+				or (kind ~= Enum.UserInputType.MouseButton1 and kind ~= Enum.UserInputType.Touch) then
+				return
+			end
+			local camera = workspace.CurrentCamera
+			local ray = camera:ScreenPointToRay(input.Position.X, input.Position.Y)
+			local hit = workspace:Raycast(ray.Origin, ray.Direction * 5000)
+			setPicking(false)
+			if hit and hit.Instance then
+				State.Hooks.reveal(hit.Instance)
+			end
+		end)
+	end
+	table.insert(
 		scope,
-		{
-			Name = "Inspect",
-			AnchorPoint = Vector2.new(1, 1),
-			Position = UDim2.new(1, -12, 1, -66),
-			Text = "Inspect",
-			TrailingIcon = "chevron-right",
-			Height = 34,
-			Visible = scope:Computed(function(use)
-				return use(State.Compact) and #use(State.Selection) > 0
-			end),
-			OnActivated = function()
-				State.open("Properties")
-			end,
-		}
+		function()
+			setPicking(false)
+		end
 	)
-	inspect.ZIndex = 4
 
 	local footer = scope:New("TextButton")({
 		Name = "Credits",
@@ -774,7 +801,7 @@ function Explorer.new(scope)
 				scope,
 				{
 					Position = UDim2.fromOffset(56, 13),
-					Size = UDim2.new(1, -110, 0, 18),
+					Size = UDim2.new(1, -56, 0, 18),
 					Text = "Ethos Dex",
 					TextSize = 14,
 				}
@@ -783,31 +810,62 @@ function Explorer.new(scope)
 				scope,
 				{
 					Position = UDim2.fromOffset(56, 31),
-					Size = UDim2.new(1, -110, 0, 16),
+					Size = UDim2.new(1, -56, 0, 16),
 					Text = Env.executor,
 					TextSize = 12,
 					FontFace = Theme.Body,
 					TextColor3 = Theme.Muted,
 				}
 			),
-			Controls.IconButton(
-				scope,
-				{
-					Name = "MultiSelect",
-					AnchorPoint = Vector2.new(1, 0.5),
-					Position = UDim2.new(1, -10, 0.5, 2),
-					Icon = "list-checks",
-					Size = 28,
-					Visible = State.Touch,
-					OnActivated = function()
-						State.MultiSelect:set(not peek(State.MultiSelect))
-						Toast.show(
-							if peek(State.MultiSelect) then "Multi-select on: taps add to the selection"
-								else "Multi-select off"
-						)
-					end,
-				}
-			),
+			-- The app adds its buttons (console, settings, hide, close) after these.
+			scope:New("Frame")({
+				Name = "Actions",
+				AnchorPoint = Vector2.new(1, 0.5),
+				Position = UDim2.new(1, -8, 0.5, 2),
+				Size = UDim2.fromOffset(0, 28),
+				AutomaticSize = Enum.AutomaticSize.X,
+				BackgroundColor3 = Theme.Surface,
+				ZIndex = 2,
+				[Children] = {
+					scope:New("UIListLayout")({
+						FillDirection = Enum.FillDirection.Horizontal,
+						VerticalAlignment = Enum.VerticalAlignment.Center,
+						Padding = UDim.new(0, 0),
+						SortOrder = Enum.SortOrder.LayoutOrder,
+					}),
+					Controls.IconButton(
+						scope,
+						{
+							Name = "MultiSelect",
+							Icon = "list-checks",
+							Size = 28,
+							LayoutOrder = 1,
+							Visible = State.Touch,
+							OnActivated = function()
+								State.MultiSelect:set(not peek(State.MultiSelect))
+								Toast.show(
+									if peek(State.MultiSelect) then "Multi-select on: taps add to the selection"
+										else "Multi-select off"
+								)
+							end,
+						}
+					),
+					Controls.IconButton(
+						scope,
+						{
+							Name = "Pick",
+							Icon = scope:Computed(function(use)
+								return if use(picking) then "x" else "crosshair"
+							end),
+							Size = 28,
+							LayoutOrder = 2,
+							OnActivated = function()
+								setPicking(not peek(picking))
+							end,
+						}
+					),
+				},
+			}),
 		},
 	})
 
@@ -818,14 +876,13 @@ function Explorer.new(scope)
 			header,
 			searchField,
 			list,
-			inspect,
-			footer,
 		},
 	})
 
 	return {
 		Instance = pane,
 		Header = header,
+		Footer = footer,
 		SearchBox = searchBox,
 		Tree = function()
 			return tree

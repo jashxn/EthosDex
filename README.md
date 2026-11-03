@@ -8,16 +8,18 @@ loadstring(game:HttpGet("https://github.com/jashxn/EthosDex/releases/latest/down
 
 Running it again replaces the open copy. Press **Right Ctrl** to show or hide it; you can change the key in Settings. On touch devices, tap the floating button instead.
 
+The layout follows Dex. A panel docks to the right edge, with the explorer on top and properties below. Drag the line between them to change the split, and drag the panel's left edge to widen it. The script viewer, console, preview and settings open in a separate window that you can move, resize and close.
+
 ## Features
 
-- **Explorer.** Studio's class icons and Studio's sort order. Children load only when you open a parent, and the list is virtualized, so very large games stay smooth. Shows nil instances when the executor can list them.
+- **Explorer.** Studio's class icons and Studio's sort order. Children load only when you open a parent, and the list is virtualized, so very large games stay smooth. Shows nil instances when the executor can list them. Use the crosshair button to click a part in the world and select it.
 - **Search.** Matches names, plus `class:Part`, `isa:BasePart`, `tag:Name` and `attr:Name`. It runs in slices, so the game doesn't freeze.
 - **Properties.** Read and edit every property from the live API dump, including hidden ones when the executor allows it. Also attributes, tags and multi-select, with live updates.
-- **Script viewer.** Decompiles with syntax highlighting, find, copy and save. Uses the executor's decompiler first, then Advanced Decompiler V3, then Konstant. You can pick one in Settings.
+- **Script viewer.** Decompiles with syntax highlighting, find, copy and save. Uses the executor's decompiler first, then Advanced Decompiler V3, then the lua.expert and Konstant web decompilers. You can pick one in Settings.
 - **Console.** Runs Luau with `sel` / `sels` bound to the selection, and shows the game's output.
 - **Preview.** Orbit view of models and parts.
-- **Actions.** Copy path, rename, duplicate, group, delete, insert, teleport, fire click detectors, proximity prompts and touches, save scripts and bytecode, and save the place or a selection (the executor's `saveinstance`, or SynSaveInstance).
-- **Window and themes.** About 50 themes. The window is resizable and can be maximized. It switches to a phone layout on narrow screens.
+- **Actions.** Copy path, rename, cut, copy and paste into (Ctrl+X/C/V), duplicate (Ctrl+D), group, delete, insert, teleport, view (the camera follows it), fire click detectors, proximity prompts and touches, save scripts and bytecode, and save the place or a selection (the executor's `saveinstance`, or SynSaveInstance).
+- **Themes.** About 50. On narrow screens, the panel takes the full width and the window fills the screen.
 
 ## Executor support
 
@@ -40,4 +42,4 @@ The in-game self-checks live in `test/`. Bundle them with `lune run lune/wax.lua
 
 ## Credits
 
-Made by **jashan** (Discord `@jasha.n`). Inspired by Moon's Dex and Chillz's Dex++. Built on Fusion and the Ethos UI library.
+Made by **jashan** (Discord `@jasha.n`). Inspired by Moon's Dex, Chillz's Dex++ and VEX Explorer. Built on Fusion and the Ethos UI library.

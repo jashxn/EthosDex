@@ -243,6 +243,37 @@ test(
 		)
 		check("cloneref keeps identity for non-instances", Env.cloneref(5) == 5)
 		check("get property", select(2, Env.getProperty(workspace, "Name")) == "Workspace")
+		check("base64 1", Env.base64("a") == "YQ==", Env.base64("a"))
+		check("base64 2", Env.base64("hi") == "aGk=", Env.base64("hi"))
+		check("base64 3", Env.base64("abc\0\255") == "YWJjAP8=", Env.base64("abc\0\255"))
+	end
+)
+
+test(
+	"actions",
+	function()
+		local App = script.EthosDex.app
+		local Actions = require(App.actions)
+		local State = require(App.state)
+		local reveal = State.Hooks.reveal
+		State.Hooks.reveal = function()
+		end
+		local from, to = Instance.new("Folder"), Instance.new("Folder")
+		local part = Instance.new("Part")
+		part.Archivable = false
+		part.Parent = from
+		Actions.hold({ part }, false)
+		Actions.paste(to)
+		check("copy clones non-archivable", #to:GetChildren() == 1 and part.Parent == from)
+		check("copy keeps archivable flag", part.Archivable == false)
+		Actions.hold({ part }, true)
+		Actions.paste(to)
+		check("cut moves", part.Parent == to and #to:GetChildren() == 2)
+		Actions.paste(from)
+		check("cut pastes once", #from:GetChildren() == 0)
+		State.Hooks.reveal = reveal
+		from:Destroy()
+		to:Destroy()
 	end
 )
 

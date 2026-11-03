@@ -48,6 +48,7 @@ handle.Gui = app.Gui
 handle.State = app.State
 handle.Tree = app.Tree
 handle.Window = app.Window
+handle.Dock = app.Dock
 handle.Version = "1.0.0"
 
 genv.__ETHOS_DEX = handle

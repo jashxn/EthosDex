@@ -180,7 +180,7 @@ function SettingsPage.new(scope)
 						scope,
 						{
 							Title = "Decompiler",
-							Description = "Auto tries the executor's, then Advanced Decompiler, then Konstant",
+							Description = "Auto tries the executor's, then Advanced Decompiler, then lua.expert and Konstant",
 							Detail = Settings.state("Decompiler"),
 							Chevron = true,
 							OnActivated = function()
@@ -193,7 +193,7 @@ function SettingsPage.new(scope)
 										and not (Env.has("getscriptbytecode")
 											and Env.has("loadstring")) then
 										reason = "Unsupported"
-									elseif mode == "Konstant"
+									elseif (mode == "Konstant" or mode == "lua.expert")
 										and not (Env.has("getscriptbytecode") and Env.has("request")) then
 										reason = "Unsupported"
 									end
@@ -349,7 +349,7 @@ function SettingsPage.new(scope)
 						scope,
 						{
 							Title = "Inspired by Dex",
-							Description = "Moon's Dex and Chillz's Dex++",
+							Description = "Moon's Dex, Chillz's Dex++ and VEX Explorer",
 						}
 					),
 				},

@@ -18,12 +18,13 @@ State.LocalPlayer = Env.service("Players").LocalPlayer
 
 -- Array of instances; always set a new table.
 State.Selection = scope:Value({})
-State.Tab = scope:Value("Properties")
+-- The floating window (Script, Console, Preview, Settings): its tab and whether it's open.
+State.Tab = scope:Value("Script")
+State.WindowOpen = scope:Value(false)
 State.ScriptTarget = scope:Value(nil)
 State.PreviewTarget = scope:Value(nil)
--- Phones: one column, the explorer or the panel.
+-- Phones: the dock takes the screen's width and the window fills the screen.
 State.Compact = scope:Value(false)
-State.MobileView = scope:Value("explorer")
 State.Touch = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
 -- Tap adds to the selection instead of replacing it (touch has no Ctrl).
 State.MultiSelect = scope:Value(false)
@@ -46,12 +47,10 @@ function State.isSelected(instance): boolean
 	return table.find(peek(State.Selection), instance) ~= nil
 end
 
--- Opens a panel tab; on phones, also flips to the panel.
+-- Opens the floating window on a tab.
 function State.open(tab: string)
 	State.Tab:set(tab)
-	if peek(State.Compact) then
-		State.MobileView:set("panel")
-	end
+	State.WindowOpen:set(true)
 end
 
 -- Hooks the panels register so actions can reach them without importing them.

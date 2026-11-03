@@ -47,27 +47,99 @@ function Actions.delete(list)
 	)
 end
 
+-- Clones even non-Archivable instances, into `parent`.
+local function cloneInto(object, parent)
+	local ok, clone = pcall(function()
+		local archivable = object.Archivable
+		object.Archivable = true
+		local copy = object:Clone()
+		object.Archivable = archivable
+		copy.Parent = parent
+		return copy
+	end)
+	return if ok then clone else nil
+end
+
+local function selectMade(made, failure: string)
+	if #made > 0 then
+		State.select(made)
+		State.Hooks.reveal(made[1], true)
+	else
+		Toast.show(failure, "error")
+	end
+end
+
 function Actions.duplicate(list)
 	local clones = {}
 	for _, object in list do
-		local ok, clone = pcall(function()
-			local archivable = object.Archivable
-			object.Archivable = true
-			local copy = object:Clone()
-			object.Archivable = archivable
-			copy.Parent = object.Parent
-			return copy
-		end)
-		if ok and clone then
-			table.insert(clones, clone)
+		table.insert(clones, cloneInto(object, object.Parent))
+	end
+	selectMade(clones, "Couldn't duplicate.")
+end
+
+-- Dex's cut / copy / paste into: copies clone on paste, cuts move.
+local held = { List = {}, Cut = false }
+
+function Actions.hold(list, cut: boolean)
+	held = { List = table.clone(list), Cut = cut }
+	Toast.show(`{if cut then "Cut" else "Copied"} {#list}`, "success")
+end
+
+function Actions.paste(parent)
+	if #held.List == 0 then
+		return
+	end
+	local made = {}
+	for _, object in held.List do
+		if held.Cut then
+			if pcall(function()
+				object.Parent = parent
+			end) then
+				table.insert(made, object)
+			end
+		else
+			table.insert(made, cloneInto(object, parent))
 		end
 	end
-	if #clones > 0 then
-		State.select(clones)
-		State.Hooks.reveal(clones[1], true)
-	else
-		Toast.show("Couldn't duplicate.", "error")
+	if held.Cut then
+		held = { List = {}, Cut = false }
 	end
+	selectMade(made, "Couldn't paste here.")
+end
+
+-- View: the camera follows the object; stopViewing puts it back.
+local savedSubject = nil
+
+local function subjectOf(object)
+	if object:IsA("BasePart") or object:IsA("Humanoid") then
+		return object
+	elseif object:IsA("Model") then
+		return object:FindFirstChildWhichIsA("Humanoid")
+			or object.PrimaryPart
+			or object:FindFirstChildWhichIsA("BasePart", true)
+	end
+	return nil
+end
+
+function Actions.view(object)
+	local camera = workspace.CurrentCamera
+	local subject = subjectOf(object)
+	if camera == nil or subject == nil then
+		Toast.show("Nothing to look at in that.", "error")
+		return
+	end
+	savedSubject = savedSubject or camera.CameraSubject
+	camera.CameraSubject = subject
+end
+
+function Actions.stopViewing()
+	local camera = workspace.CurrentCamera
+	if savedSubject and camera then
+		pcall(function()
+			camera.CameraSubject = savedSubject
+		end)
+	end
+	savedSubject = nil
 end
 
 function Actions.group(list)
@@ -227,8 +299,35 @@ function Actions.entries(list, tree)
 		})
 	end
 	add({
+		Text = "Cut",
+		Icon = "scissors",
+		Detail = "Ctrl+X",
+		OnActivated = function()
+			Actions.hold(list, true)
+		end,
+	})
+	add({
+		Text = "Copy",
+		Icon = "clipboard-copy",
+		Detail = "Ctrl+C",
+		OnActivated = function()
+			Actions.hold(list, false)
+		end,
+	})
+	if #held.List > 0 then
+		add({
+			Text = `Paste into {first.Name}`,
+			Icon = "clipboard-paste",
+			Detail = "Ctrl+V",
+			OnActivated = function()
+				Actions.paste(first)
+			end,
+		})
+	end
+	add({
 		Text = "Duplicate",
 		Icon = "copy-plus",
+		Detail = "Ctrl+D",
 		OnActivated = function()
 			Actions.duplicate(list)
 		end,
@@ -345,6 +444,22 @@ function Actions.entries(list, tree)
 			OnActivated = function()
 				Actions.teleport(first)
 			end,
+		})
+	end
+	if first:IsA("PVInstance") and not first:IsA("WorldRoot") or first:IsA("Humanoid") then
+		add({
+			Text = "View",
+			Icon = "eye",
+			OnActivated = function()
+				Actions.view(first)
+			end,
+		})
+	end
+	if savedSubject then
+		add({
+			Text = "Stop viewing",
+			Icon = "eye-off",
+			OnActivated = Actions.stopViewing,
 		})
 	end
 	local click = fireTarget(first, "ClickDetector")
