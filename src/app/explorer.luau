@@ -10,6 +10,7 @@ local Root = script.Parent.Parent
 local Fusion = require(Root.packages.fusion)
 local Controls = require(Root.ui.controls)
 local Theme = require(Root.ui.tokens)
+local Scrollbar = require(Root.ui.scrollbar)
 local Env = require(Root.core.env)
 local Api = require(Root.core.api)
 local Tree = require(Root.core.tree)
@@ -219,9 +220,6 @@ function Explorer.new(scope)
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		CanvasSize = UDim2.new(),
-		ScrollBarThickness = if State.Touch then 0 else 4,
-		ScrollBarImageColor3 = Theme.Ink,
-		ScrollBarImageTransparency = 0.8,
 		ScrollingDirection = Enum.ScrollingDirection.Y,
 		VerticalScrollBarInset = Enum.ScrollBarInset.ScrollBar,
 		ElasticBehavior = Enum.ElasticBehavior.WhenScrollable,
@@ -233,6 +231,7 @@ function Explorer.new(scope)
 			dirty = true
 		end,
 	})
+	Scrollbar.attach(scope, list)
 	table.insert(
 		scope,
 		list:GetPropertyChangedSignal("CanvasPosition"):Connect(function()

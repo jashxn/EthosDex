@@ -81,6 +81,77 @@ test(
 )
 
 test(
+	"value components",
+	function()
+		local parts = Values.components(Vector3.new(1, 2.5, -3))
+		check(
+			"vector3 components",
+			#parts == 3 and parts[2].Name == "Y" and parts[2].Value == 2.5,
+			#parts
+		)
+		check("number has none", Values.components(5) == nil)
+		check(
+			"vector3 with Y",
+			Values.withComponent(Vector3.new(1, 2, 3), "Y", 9) == Vector3.new(1, 9, 3)
+		)
+		-- Each selected object keeps its own other components.
+		check(
+			"rebuilds from own value",
+			Values.withComponent(Vector3.new(4, 5, 6), "Y", 9) == Vector3.new(4, 9, 6)
+		)
+		check("unknown component", Values.withComponent(Vector3.zero, "W", 1) == nil)
+
+		local frame = CFrame.new(1, 2, 3)
+			* CFrame.fromOrientation(math.rad(10), math.rad(20), math.rad(30))
+		parts = Values.components(frame)
+		check(
+			"cframe components",
+			#parts == 6
+				and parts[1].Name == "Position X"
+				and parts[1].Value == 1
+				and parts[5].Name == "Orientation Y"
+				and math.abs(parts[5].Value - 20) < 1e-3,
+			parts[5] and parts[5].Value
+		)
+		local moved = Values.withComponent(frame, "Position Y", 7)
+		check(
+			"cframe position keeps rotation",
+			moved.Position == Vector3.new(1, 7, 3) and moved.Rotation == frame.Rotation
+		)
+		local turned = Values.withComponent(frame, "Orientation Z", 45)
+		local x, y, z = turned:ToOrientation()
+		check(
+			"cframe orientation round trip",
+			turned.Position == frame.Position
+				and math.abs(math.deg(x) - 10) < 1e-3
+				and math.abs(math.deg(y) - 20) < 1e-3
+				and math.abs(math.deg(z) - 45) < 1e-3,
+			`{math.deg(x)} {math.deg(y)} {math.deg(z)}`
+		)
+
+		parts = Values.components(UDim2.new(0.5, 10, 1, -4))
+		check(
+			"udim2 components",
+			#parts == 4 and parts[2].Name == "X Offset" and parts[4].Value == -4,
+			#parts
+		)
+		check(
+			"udim2 with Y Scale",
+			Values.withComponent(UDim2.new(0.5, 10, 1, -4), "Y Scale", 0.25)
+				== UDim2.new(0.5, 10, 0.25, -4)
+		)
+		check(
+			"udim with offset",
+			Values.withComponent(UDim.new(0.5, 10), "Offset", 3) == UDim.new(0.5, 3)
+		)
+		check(
+			"vector2int16 with X",
+			Values.withComponent(Vector2int16.new(1, 2), "X", 5) == Vector2int16.new(5, 2)
+		)
+	end
+)
+
+test(
 	"path",
 	function()
 		local folder = Instance.new("Folder")
@@ -382,6 +453,114 @@ test(
 		Settings.set("Density", "Comfortable")
 		check("density changes rows", State.rowHeight() > compact)
 		Settings.set("Density", was)
+	end
+)
+
+test(
+	"introspect",
+	function()
+		local Introspect = require(script.EthosDex.core.introspect)
+		local args = Introspect.parseArgs('5\n"hi"\n\nnil\ntrue')
+		check("args count keeps nil", args and args.n == 4, args and args.n)
+		check(
+			"args values",
+			args and args[1] == 5 and args[2] == "hi" and args[3] == nil and args[4] == true
+		)
+		if Env.has("loadstring") then
+			local computed = Introspect.parseArgs("1 + 2\nfoo", { foo = "bar" })
+			check("args expression", computed and computed[1] == 3 and computed[2] == "bar")
+			local bad, problem = Introspect.parseArgs("(")
+			check(
+				"args error names the line",
+				bad == nil and string.find(problem, "Line 1", 1, true) ~= nil,
+				problem
+			)
+		end
+
+		local bindable = Instance.new("BindableFunction")
+		bindable.OnInvoke = function(a, b)
+			return a + b
+		end
+		check("send method", Introspect.sendMethod(bindable) == "Invoke")
+		local ok, text = Introspect.call(bindable, { n = 2, 2, 3 })
+		check("call returns", ok and text == "5", text)
+
+		local event = Instance.new("BindableEvent")
+		local function handler()
+		end
+		event.Event:Connect(handler)
+		if Env.has("getconnections") then
+			local list = Introspect.connections(event.Event)
+			check("connections found", #list >= 1, #list)
+			check("connection function", list[1] and list[1].Function == handler)
+		end
+		if Introspect.canBlock() then
+			check(
+				"block",
+				Introspect.setBlocked(event, true) and Introspect.blockedCount(event) == 0
+			)
+			Introspect.setBlocked(event, false)
+			check("unblock", Introspect.blockedCount(event) == nil)
+		end
+
+		local secret = { "EthosNeedleUpvalue" }
+		local function sample()
+			return "EthosNeedleConstant", secret
+		end
+		local found = Introspect.search(
+			{ { Function = sample, Closure = true } },
+			"ethosneedle",
+			{ Constants = true, Upvalues = true },
+			50
+		)
+		local kinds = {}
+		for _, result in found do
+			kinds[result.Kind] = true
+		end
+		if Env.has("getconstants") then
+			check("constant search", kinds.Const == true)
+		end
+		check(
+			"where",
+			Introspect.where({ Source = "Players.Me.Foo", Line = 12, Function = sample })
+				== "Foo:12"
+		)
+	end
+)
+
+test(
+	"window snapping",
+	function()
+		local Window = require(script.EthosDex.app.window)
+		local free = { At = Vector2.new(0, 0), Size = Vector2.new(1000, 600) }
+		check("top maximizes", Window.snapFor(Vector2.new(500, 5), free) == "max")
+		check("left half", Window.snapFor(Vector2.new(3, 300), free) == "left")
+		check("right half", Window.snapFor(Vector2.new(998, 300), free) == "right")
+		check("middle stays", Window.snapFor(Vector2.new(500, 300), free) == nil)
+		local left, right = Window.snapRect("left", free), Window.snapRect("right", free)
+		check(
+			"halves meet with a gap",
+			math.abs(right.At.X - (left.At.X + left.Size.X) - 12) < 1e-6
+		)
+		check("halves full height", left.Size.Y == 576 and right.Size.Y == 576)
+		local narrow = { At = Vector2.new(0, 0), Size = Vector2.new(700, 600) }
+		local thin = Window.snapRect("right", narrow)
+		check("half keeps min width", thin.Size.X == 420)
+		check("right half hugs the right edge", thin.At.X + thin.Size.X == 688)
+	end
+)
+
+test(
+	"scrollbar thumb",
+	function()
+		local Scrollbar = require(script.EthosDex.ui.scrollbar)
+		check("no thumb when it fits", Scrollbar.thumb(300, 300, 0) == nil)
+		local at, length = Scrollbar.thumb(100, 1000, 0)
+		check("thumb at top", at == 0 and length == 24, `{at} {length}`)
+		at = Scrollbar.thumb(100, 1000, 900)
+		check("thumb at bottom", at == 76, at)
+		local _, big = Scrollbar.thumb(500, 1000, 0)
+		check("thumb length is the visible share", big == 250, big)
 	end
 )
 

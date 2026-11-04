@@ -9,6 +9,7 @@ local Root = script.Parent.Parent
 local Fusion = require(Root.packages.fusion)
 local Controls = require(Root.ui.controls)
 local Theme = require(Root.ui.tokens)
+local Scrollbar = require(Root.ui.scrollbar)
 local Fonts = require(Root.ui.fonts)
 local CodeView = require(Root.ui.codeView)
 local Env = require(Root.core.env)
@@ -39,9 +40,6 @@ function Console.new(scope)
 		BorderSizePixel = 0,
 		AutomaticCanvasSize = Enum.AutomaticSize.Y,
 		CanvasSize = UDim2.new(),
-		ScrollBarThickness = 3,
-		ScrollBarImageColor3 = Theme.Ink,
-		ScrollBarImageTransparency = 0.8,
 		ScrollingDirection = Enum.ScrollingDirection.Y,
 		[Children] = {
 			scope:New("UIPadding")({
@@ -56,6 +54,7 @@ function Console.new(scope)
 			}),
 		},
 	})
+	Scrollbar.attach(scope, log)
 
 	local function push(text: string, kind: string)
 		order += 1

@@ -1,7 +1,7 @@
 --!nocheck
 --[[
-	Dex's layout: one panel docked to the right (or left, in settings) edge, the explorer on top
-	and the properties below, a splitter between them and a grip on the inner edge to widen it.
+	Dex's layout: one panel docked to the right (or left: drag it by its header) edge, the explorer on
+	top and the properties below, a splitter between them and a grip on the inner edge to widen it.
 	On phones it takes the screen's width. Hidden, it leaves a floating bubble (the only way back
 	on touch).
 
@@ -180,6 +180,62 @@ function Dock.new(scope, props)
 			props.Properties,
 		},
 	})
+
+	-- Dragging the header moves the dock to the half of the screen the pointer is in on release.
+	local landing = scope:Value(nil) -- "Left"/"Right" while dragging
+	local header = props.Explorer:FindFirstChild("Header")
+	table.insert(
+		scope,
+		header.InputBegan:Connect(
+			function(input)
+				if not Pointer.isPress(input) or peek(compact) then
+					return
+				end
+				local start = Vector2.new(input.Position.X, input.Position.Y)
+				-- Presses on the header's buttons stay theirs.
+				local actions = header:FindFirstChild("Actions")
+				local over = start - actions.AbsolutePosition
+				if over.X >= 0
+					and over.Y >= 0
+					and over.X <= actions.AbsoluteSize.X
+					and over.Y <= actions.AbsoluteSize.Y then
+					return
+				end
+				Pointer.drag(
+					scope,
+					function(point)
+						if peek(landing) or (point - start).Magnitude / props.Scale() > 6 then
+							local onLeft = point.X / props.Scale() < peek(room).X / 2
+							landing:set(if onLeft then "Left" else "Right")
+						end
+					end,
+					function()
+						local side = peek(landing)
+						landing:set(nil)
+						if side then
+							Settings.set("DockSide", side)
+						end
+					end
+				)
+			end
+		)
+	)
+	Window.preview(
+		scope,
+		props.Layer,
+		13,
+		scope:Computed(function(use)
+			local side = use(landing)
+			if not side then
+				return nil
+			end
+			local x = if side == "Left" then MARGIN else use(room).X - use(shownWidth) - MARGIN
+			return {
+				At = Vector2.new(x, MARGIN),
+				Size = Vector2.new(use(shownWidth), use(height)),
+			}
+		end)
+	)
 
 	local frame = Window.chrome(
 		scope,

@@ -198,6 +198,79 @@ function Values.parse(text: string, current): (boolean, any)
 	return false, nil
 end
 
+-- Compound types the panel opens into one number row per component, in this order.
+local COMPONENTS = {
+	Vector3 = { "X", "Y", "Z" },
+	Vector3int16 = { "X", "Y", "Z" },
+	Vector2 = { "X", "Y" },
+	Vector2int16 = { "X", "Y" },
+	CFrame = {
+		"Position X",
+		"Position Y",
+		"Position Z",
+		"Orientation X",
+		"Orientation Y",
+		"Orientation Z",
+	},
+	UDim2 = { "X Scale", "X Offset", "Y Scale", "Y Offset" },
+	UDim = { "Scale", "Offset" },
+}
+local BUILD = {
+	Vector3 = Vector3.new,
+	Vector3int16 = Vector3int16.new,
+	Vector2 = Vector2.new,
+	Vector2int16 = Vector2int16.new,
+	UDim2 = UDim2.new,
+	UDim = UDim.new,
+}
+
+local function parts(value): { number }
+	local kind = typeof(value)
+	if kind == "CFrame" then
+		local x, y, z = value:ToOrientation()
+		return { value.X, value.Y, value.Z, math.deg(x), math.deg(y), math.deg(z) }
+	elseif kind == "UDim2" then
+		return { value.X.Scale, value.X.Offset, value.Y.Scale, value.Y.Offset }
+	elseif kind == "UDim" then
+		return { value.Scale, value.Offset }
+	elseif #COMPONENTS[kind] == 3 then
+		return { value.X, value.Y, value.Z }
+	end
+	return { value.X, value.Y }
+end
+
+-- The components of a compound value as { Name, Value } in order, or nil for other types.
+function Values.components(value): { { Name: string, Value: number } }?
+	local names = COMPONENTS[typeof(value)]
+	if names == nil then
+		return nil
+	end
+	local list = {}
+	for index, n in parts(value) do
+		table.insert(list, { Name = names[index], Value = n })
+	end
+	return list
+end
+
+-- The value with one named component replaced, or nil if it has no such component.
+function Values.withComponent(value, name: string, n: number): any
+	local kind = typeof(value)
+	local index = COMPONENTS[kind] and table.find(COMPONENTS[kind], name)
+	if index == nil then
+		return nil
+	end
+	local p = parts(value)
+	p[index] = n
+	if kind ~= "CFrame" then
+		return BUILD[kind](table.unpack(p))
+	elseif index <= 3 then
+		-- Keep the exact rotation instead of rebuilding it from degrees.
+		return value.Rotation + Vector3.new(p[1], p[2], p[3])
+	end
+	return CFrame.new(p[1], p[2], p[3])
+		* CFrame.fromOrientation(math.rad(p[4]), math.rad(p[5]), math.rad(p[6]))
+end
+
 -- Luau that rebuilds a value, for "Copy value".
 function Values.code(value): string
 	local kind = typeof(value)

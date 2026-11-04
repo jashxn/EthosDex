@@ -14,16 +14,17 @@ The layout follows Dex. A panel docks to the right edge, with the explorer on to
 
 - **Explorer.** Studio's class icons and Studio's sort order. Children load only when you open a parent, and the list is virtualized, so very large games stay smooth. Shows nil instances when the executor can list them. Use the crosshair button to click a part in the world and select it.
 - **Search.** Matches names, plus `class:Part`, `isa:BasePart`, `tag:Name` and `attr:Name`. It runs in slices, so the game doesn't freeze.
-- **Properties.** Read and edit every property from the live API dump, including hidden ones when the executor allows it. Also attributes, tags and multi-select, with live updates.
+- **Properties.** Read and edit every property from the live API dump, including hidden ones when the executor allows it. Vector3, CFrame, UDim2 and similar values open into X/Y/Z rows you can edit one at a time. Also attributes, tags and multi-select, with live updates.
 - **Script viewer.** Decompiles with syntax highlighting, find, copy and save. Uses the executor's decompiler first, then Advanced Decompiler V3, then the lua.expert and Konstant web decompilers. You can pick one in Settings.
 - **Console.** Runs Luau with `sel` / `sels` bound to the selection, and shows the game's output.
 - **Preview.** Orbit view of models and parts.
+- **Inspect.** Right-click to open it. For a remote or bindable, type arguments (one per line; literals or any Luau expression with `me`, `char`, `hrp`, `sel`, `sels`) and fire or invoke it, or block the game from firing it. For a script, search its constants and upvalues. For anything else, list each signal's connections with their script and line, then fire, disable or disconnect them.
 - **Actions.** Copy path, rename, cut, copy and paste into (Ctrl+X/C/V), duplicate (Ctrl+D), group, delete, insert, teleport, view (the camera follows it), fire click detectors, proximity prompts and touches, save scripts and bytecode, and save the place or a selection (the executor's `saveinstance`, or SynSaveInstance).
 - **Themes.** About 50. On narrow screens, the panel takes the full width and the window fills the screen.
 - **Undo.** Ctrl+Z (with the pointer over the panels) undoes deletes, renames, pastes, duplicates, inserts and property edits, up to the last 50.
 - **Activity card.** While you view something or pick from the world, a card at the top shows it, with Stop or Cancel right there.
 - **Glow.** The selected part or model glows in the world, and whatever the pointer is over in the explorer glows fainter. You can turn either off.
-- **Settings.** UI scale, panel opacity, dock side (right or left), row height, text size for the explorer, properties and code, the property name column, the glows and the cursor. Reset puts them back.
+- **Settings.** UI scale, panel opacity, row height, text size for the explorer, properties and code, the property name column, the glows and the cursor. Reset puts them back.
 
 
 ## Mouse and keyboard
@@ -35,6 +36,8 @@ The layout follows Dex. A panel docks to the right edge, with the explorer on to
 - **Right-click a property**: copy it as code (`obj.Prop = value`), and for object properties like `Parent` or `Adornee`, **Pick in explorer** (click the new value) or **Clear**.
 - **Search** compares properties too: `WalkSpeed>16`, `Anchored=true`, `Material=Neon`, `Text~shop` (`= != > < >= <=`, `~` contains). New instances that match show up while the search is open. Clearing it returns to where you were, or to what you picked.
 - **Delete** selects the parent afterwards. Copy path indexes by position when a sibling shares the name.
+- **Drag the window** by its topbar to the top edge to maximize it, or to a side to fill that half. Drag the panel's header to the other side of the screen to dock it there.
+- **Scrollbars** are thin pills that widen under the pointer. Drag one, or click the track to jump there.
 - CFrame properties take 3 numbers (move, keep rotation), 6 (position and orientation in degrees) or 12.
 
 ## Executor support

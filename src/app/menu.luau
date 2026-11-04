@@ -9,6 +9,7 @@ local Root = script.Parent.Parent
 local Fusion = require(Root.packages.fusion)
 local Controls = require(Root.ui.controls)
 local Theme = require(Root.ui.tokens)
+local Scrollbar = require(Root.ui.scrollbar)
 local Env = require(Root.core.env)
 local State = require(script.Parent.state)
 
@@ -199,26 +200,26 @@ function Menu.open(position: Vector2, entries)
 					Color = Theme.Ink,
 					Transparency = 0.88,
 				}),
-				scope:New("ScrollingFrame")({
-					Size = UDim2.fromScale(1, 1),
-					BackgroundTransparency = 1,
-					BorderSizePixel = 0,
-					CanvasSize = UDim2.fromOffset(0, height),
-					ScrollBarThickness = if height > shown then 3 else 0,
-					ScrollBarImageColor3 = Theme.Ink,
-					ScrollBarImageTransparency = 0.8,
-					ScrollingDirection = Enum.ScrollingDirection.Y,
-					[Children] = {
-						scope:New("UIPadding")({
-							PaddingTop = UDim.new(0, 4),
-							PaddingBottom = UDim.new(0, 4),
-							PaddingLeft = UDim.new(0, 4),
-							PaddingRight = UDim.new(0, 4),
-						}),
-						scope:New("UIListLayout")({ SortOrder = Enum.SortOrder.LayoutOrder }),
-						children,
-					},
-				}),
+				Scrollbar.attach(
+					scope,
+					scope:New("ScrollingFrame")({
+						Size = UDim2.fromScale(1, 1),
+						BackgroundTransparency = 1,
+						BorderSizePixel = 0,
+						CanvasSize = UDim2.fromOffset(0, height),
+						ScrollingDirection = Enum.ScrollingDirection.Y,
+						[Children] = {
+							scope:New("UIPadding")({
+								PaddingTop = UDim.new(0, 4),
+								PaddingBottom = UDim.new(0, 4),
+								PaddingLeft = UDim.new(0, 4),
+								PaddingRight = UDim.new(0, 4),
+							}),
+							scope:New("UIListLayout")({ SortOrder = Enum.SortOrder.LayoutOrder }),
+							children,
+						},
+					})
+				),
 			},
 		}),
 	})

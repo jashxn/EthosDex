@@ -11,6 +11,7 @@ local Root = script.Parent.Parent
 local Fusion = require(Root.packages.fusion)
 local Controls = require(Root.ui.controls)
 local Theme = require(Root.ui.tokens)
+local Scrollbar = require(Root.ui.scrollbar)
 local Env = require(Root.core.env)
 local Api = require(Root.core.api)
 local Values = require(Root.core.values)
@@ -74,6 +75,7 @@ end
 function Properties.new(scope)
 	local query = scope:Value("")
 	local collapsed = {}
+	local expanded = {} -- property names whose components are open, kept across selections
 	local entries = {}
 	local dirty = true
 	local target = nil
@@ -147,12 +149,10 @@ function Properties.new(scope)
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		CanvasSize = UDim2.new(),
-		ScrollBarThickness = if State.Touch then 0 else 4,
-		ScrollBarImageColor3 = Theme.Ink,
-		ScrollBarImageTransparency = 0.8,
 		ScrollingDirection = Enum.ScrollingDirection.Y,
 		VerticalScrollBarInset = Enum.ScrollBarInset.ScrollBar,
 	})
+	Scrollbar.attach(scope, list)
 	table.insert(
 		scope,
 		list:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
@@ -180,7 +180,15 @@ function Properties.new(scope)
 	-- Reading and writing --------------------------------------------------------------------
 
 	local function read(entry): (boolean, any)
-		if entry.Kind == "attr" then
+		if entry.Kind == "component" then
+			local ok, value = read(entry.Parent)
+			for _, part in (ok and Values.components(value)) or {} do
+				if part.Name == entry.Name then
+					return true, part.Value
+				end
+			end
+			return false, nil
+		elseif entry.Kind == "attr" then
 			return pcall(target.GetAttribute, target, entry.Name)
 		elseif entry.Kind == "tags" then
 			return pcall(function()
@@ -198,16 +206,28 @@ function Properties.new(scope)
 	end
 
 	local function write(entry, value)
+		local component = if entry.Kind == "component" then entry.Name else nil
+		if component then
+			entry = entry.Parent
+		end
 		local failures, problem = 0, nil
 		local before = {}
 		for _, object in State.selection() do
-			local had, old = if entry.Kind == "attr" then pcall(
-					object.GetAttribute,
-					object,
-					entry.Name
-				)
-				else Env.getProperty(object, entry.Name)
-			local ok, failure = set(object, entry, value)
+			-- Not an if-expression: those keep only the first value, which would lose old.
+			local had, old = false, nil
+			if entry.Kind == "attr" then
+				had, old = pcall(object.GetAttribute, object, entry.Name)
+			else
+				had, old = Env.getProperty(object, entry.Name)
+			end
+			-- A component edit rebuilds each object's own value, so its other components stay.
+			local new = if not component then value
+				elseif had then Values.withComponent(old, component, value)
+				else nil
+			local ok, failure = false, `no {component}`
+			if new ~= nil or not component then
+				ok, failure = set(object, entry, new)
+			end
 			if ok and had then
 				table.insert(before, { object, old })
 			elseif not ok then
@@ -381,6 +401,22 @@ function Properties.new(scope)
 			if not collapsed[category] then
 				for _, entry in groups[category] do
 					table.insert(entries, entry)
+					local has, value = false, nil
+					if expanded[entry.Name] then
+						has, value = read(entry)
+					end
+					for _, part in (has and Values.components(value)) or {} do
+						table.insert(
+							entries,
+							{
+								Kind = "component",
+								Name = part.Name,
+								Parent = entry,
+								ReadOnly = entry.ReadOnly,
+								Hidden = entry.Hidden,
+							}
+						)
+					end
 				end
 			end
 		end
@@ -520,8 +556,10 @@ function Properties.new(scope)
 			Text = "",
 			[OnEvent("Activated")] = function()
 				local entry = row.Entry
-				if entry and entry.Kind == "header" then
-					collapsed[entry.Name] = not collapsed[entry.Name]
+				if entry then
+					-- Only headers and compound values show this button.
+					local flags = if entry.Kind == "header" then collapsed else expanded
+					flags[entry.Name] = not flags[entry.Name]
 					build()
 					dirty = true
 				end
@@ -677,6 +715,8 @@ function Properties.new(scope)
 				local entry = row.Entry
 				if entry == nil or entry.Kind == "header" then
 					return
+				elseif entry.Kind == "component" then
+					entry = entry.Parent
 				end
 				local ok, value = read(entry)
 				local code = if ok then Values.code(value) else "nil"
@@ -818,7 +858,9 @@ function Properties.new(scope)
 			if entry.Kind == "header" then
 				frame.BackgroundTransparency = 0.97
 				row.Fold.Visible = true
+				row.Fold.Size = UDim2.fromScale(1, 1)
 				row.Chevron.Visible = true
+				row.Chevron.Position = UDim2.new(0, 6, 0.5, 0)
 				row.Chevron.Rotation = if collapsed[entry.Name] then 0 else 90
 				row.Name.Position = UDim2.fromOffset(24, 0)
 				row.Name.Size = UDim2.new(1, -30, 1, 0)
@@ -830,16 +872,23 @@ function Properties.new(scope)
 				continue
 			end
 			frame.BackgroundTransparency = 1
-			row.Fold.Visible = false
-			row.Chevron.Visible = false
 			row.Line.Visible = true
-			row.Name.Position = UDim2.fromOffset(14, 0)
-			row.Name.Size = UDim2.new(0, nameWidth - 10, 1, 0)
+			local indent = if entry.Kind == "component" then 14 else 0
+			row.Name.Position = UDim2.fromOffset(14 + indent, 0)
+			row.Name.Size = UDim2.new(0, nameWidth - 10 - indent, 1, 0)
 			row.Name.Text = entry.Name
 			row.Name.FontFace = peek(Theme.Body)
 			row.Name.TextTransparency = if entry.Hidden then 0.4 else 0
 			local ok, value = read(entry)
 			local kind = typeof(value)
+			local opens = ok and Values.components(value) ~= nil
+			row.Fold.Visible = opens
+			row.Chevron.Visible = opens
+			if opens then
+				row.Fold.Size = UDim2.new(0, nameWidth, 1, 0)
+				row.Chevron.Position = UDim2.new(0, 1, 0.5, 0)
+				row.Chevron.Rotation = if expanded[entry.Name] then 90 else 0
+			end
 			local x = valueX
 			local swatch = ok and (kind == "Color3" or kind == "BrickColor")
 			row.Swatch.Visible = swatch

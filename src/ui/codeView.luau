@@ -14,6 +14,7 @@ local UserInputService = game:GetService("UserInputService")
 local Root = script.Parent.Parent
 local Fusion = require(Root.packages.fusion)
 local Theme = require(Root.ui.tokens)
+local Scrollbar = require(Root.ui.scrollbar)
 local Fonts = require(Root.ui.fonts)
 local Surface = require(script.Parent.controls.surface)
 local CodeTheme = require(script.Parent.codeTheme)
@@ -261,9 +262,6 @@ function CodeView.new(scope, props)
 		BorderSizePixel = 0,
 		CanvasSize = UDim2.new(),
 		AutomaticCanvasSize = Enum.AutomaticSize.XY,
-		ScrollBarThickness = 3,
-		ScrollBarImageColor3 = Theme.Ink,
-		ScrollBarImageTransparency = 0.82,
 		[Children] = {
 			scope:New("UIPadding")({
 				PaddingTop = UDim.new(0, PAD),
@@ -318,6 +316,7 @@ function CodeView.new(scope, props)
 			box,
 		},
 	})
+	Scrollbar.attach(scope, scroll)
 
 	local frame = scope:New("Frame")({
 		Name = props.Name or "CodeView",

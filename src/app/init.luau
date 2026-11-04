@@ -27,6 +27,7 @@ local ScriptViewer = require(script.scriptViewer)
 local Console = require(script.console)
 local Preview = require(script.preview)
 local SettingsPage = require(script.settingsPage)
+local Inspect = require(script.inspect)
 
 local Children = Fusion.Children
 local peek = Fusion.peek
@@ -35,7 +36,7 @@ local UserInputService = Env.service("UserInputService")
 
 local TOPBAR = 46
 local COMPACT_WIDTH = 720
-local TABS = { "Script", "Console", "Preview", "Settings" }
+local TABS = { "Script", "Console", "Preview", "Inspect", "Settings" }
 
 local App = {}
 
@@ -122,6 +123,7 @@ function App.start()
 		Script = ScriptViewer.new(scope:innerScope()).Instance,
 		Console = Console.new(scope:innerScope()).Instance,
 		Preview = Preview.new(scope:innerScope()).Instance,
+		Inspect = Inspect.new(scope:innerScope()).Instance,
 		Settings = SettingsPage.new(scope:innerScope()).Instance,
 	}
 	local content = scope:New("Frame")({
@@ -269,6 +271,13 @@ function App.start()
 		}
 	)
 	window.DragHandle(topbar)
+	-- Snapping can maximize the window too; the button's icon follows.
+	table.insert(
+		scope,
+		scope:Observer(window.Maximized):onChange(function()
+			maximizedIcon:set(if peek(window.Maximized) then "minimize-2" else "maximize-2")
+		end)
+	)
 	Activity.new(scope, layer)
 	Cursor.new(scope, layer)
 
@@ -454,6 +463,7 @@ function App.start()
 		Menu.close()
 		Picker.close()
 		Actions.stopViewing()
+		require(Root.core.introspect).unblockAll()
 		local tree = explorer.Tree()
 		if tree then
 			tree:destroy()

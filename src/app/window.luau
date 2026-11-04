@@ -6,6 +6,7 @@
 	Window.new props: Layer, Room (Value of the layer's size), Content (frame), Reserve (Computed: px on
 	the right taken by the dock), Shown (Computed: the app is visible), Scale ().
 	Returns { Instance, Maximized (Value), DragHandle (fn) }. State.WindowOpen opens and closes it.
+	Dragging it by the topbar to the top edge of the free space maximizes it; to a side, halves it.
 ]]
 
 local Root = script.Parent.Parent
@@ -23,6 +24,7 @@ local peek = Fusion.peek
 
 local RADIUS = 18
 local MIN = Vector2.new(420, 300)
+local SNAP = 24 -- how close to an edge of the free space a drag arms a snap
 local LOW_FADE = NumberSequence.new({
 	NumberSequenceKeypoint.new(0, 1),
 	NumberSequenceKeypoint.new(0.7, 1),
@@ -31,6 +33,63 @@ local LOW_FADE = NumberSequence.new({
 })
 
 local Window = {}
+
+-- The snap a window drag at `point` arms: "max" at the top edge, "left"/"right" at the sides.
+-- `free` is { At, Size }, the space the dock leaves, in layer offsets.
+function Window.snapFor(point: Vector2, free): string?
+	if point.Y < free.At.Y + SNAP then
+		return "max"
+	elseif point.X < free.At.X + SNAP then
+		return "left"
+	elseif point.X > free.At.X + free.Size.X - SNAP then
+		return "right"
+	end
+	return nil
+end
+
+-- The rect a snap fills inside `free`, with 12px margins.
+function Window.snapRect(kind: string, free)
+	local at, fill = free.At + Vector2.new(12, 12), free.Size - Vector2.new(24, 24)
+	if kind == "max" then
+		return { At = at, Size = fill }
+	end
+	-- Never under the window's minimum, or the tabs fill the topbar and leave nothing to grab.
+	local width = math.max(MIN.X, (fill.X - 12) / 2)
+	return {
+		At = if kind == "right" then at + Vector2.new(fill.X - width, 0) else at,
+		Size = Vector2.new(width, fill.Y),
+	}
+end
+
+-- A translucent accent frame showing where a drag will land; `rect` is a Computed of { At, Size } or nil.
+function Window.preview(scope, parent: Instance, zIndex: number, rect)
+	return scope:New("Frame")({
+		Name = "SnapPreview",
+		Parent = parent,
+		Position = scope:Computed(function(use)
+			local shown = use(rect)
+			return if shown then UDim2.fromOffset(shown.At.X, shown.At.Y) else UDim2.new()
+		end),
+		Size = scope:Computed(function(use)
+			local shown = use(rect)
+			return if shown then UDim2.fromOffset(shown.Size.X, shown.Size.Y) else UDim2.new()
+		end),
+		BackgroundColor3 = Theme.Accent,
+		BackgroundTransparency = 0.82,
+		Visible = scope:Computed(function(use)
+			return use(rect) ~= nil
+		end),
+		ZIndex = zIndex,
+		[Children] = {
+			scope:New("UICorner")({ CornerRadius = UDim.new(0, RADIUS) }),
+			scope:New("UIStroke")({
+				ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+				Color = Theme.Accent,
+				Transparency = 0.4,
+			}),
+		},
+	})
+end
 
 -- props: Name, Position, Size, Visible, ZIndex, Children (inside the body).
 function Window.chrome(scope, props)
@@ -115,6 +174,8 @@ function Window.new(scope, props)
 	local room = props.Room
 	local compact = State.Compact
 	local maximized = scope:Value(false)
+	local half = scope:Value(nil) -- "left"/"right" while snapped to half the free space
+	local armed = scope:Value(nil) -- the snap releasing the current drag would take
 	local size = scope:Value(Vector2.new(Settings.get("WindowWidth"), Settings.get("WindowHeight")))
 	local offset = scope:Value(nil) -- top-left; nil centres it in the space left of the dock
 
@@ -126,48 +187,91 @@ function Window.new(scope, props)
 		)
 	end
 
+	-- The space the dock leaves; it starts after the dock when that's on the left.
+	local freeSpace = scope:Computed(function(use)
+		local space = use(room)
+		local reserve = use(props.Reserve)
+		return {
+			At = Vector2.new(if use(Settings.state("DockSide")) == "Left" then reserve else 0, 0),
+			Size = Vector2.new(math.max(MIN.X + 24, space.X - reserve), space.Y),
+		}
+	end)
+
 	-- The window's rectangle as drawn: phone fills the screen, maximized fills what the dock leaves.
-	local rect = scope:Computed(
-		function(use)
-			local space = use(room)
-			local reserve = use(props.Reserve)
-			local free = Vector2.new(math.max(MIN.X + 24, space.X - reserve), space.Y)
-			-- The free space starts after the dock when it's on the left.
-			local origin = Vector2.new(
-				if use(Settings.state("DockSide")) == "Left" then reserve else 0,
-				0
-			)
-			if use(compact) then
-				return { At = Vector2.new(6, 6), Size = space - Vector2.new(12, 12) }
-			elseif use(maximized) then
-				return { At = origin + Vector2.new(12, 12), Size = free - Vector2.new(24, 24) }
-			end
-			local shown = Vector2.new(
-				math.clamp(use(size).X, MIN.X, math.max(MIN.X, free.X - 24)),
-				math.clamp(use(size).Y, MIN.Y, math.max(MIN.Y, space.Y - 16))
-			)
-			local at = use(offset) or origin + (free - shown) / 2
-			at = Vector2.new(
-				math.clamp(at.X, 8 - shown.X + 120, space.X - 120),
-				math.clamp(at.Y, 0, space.Y - 48)
-			)
-			return { At = at, Size = shown }
+	local rect = scope:Computed(function(use)
+		local space = use(room)
+		local origin, free = use(freeSpace).At, use(freeSpace).Size
+		if use(compact) then
+			return { At = Vector2.new(6, 6), Size = space - Vector2.new(12, 12) }
+		elseif use(maximized) then
+			return Window.snapRect("max", use(freeSpace))
+		elseif use(half) then
+			return Window.snapRect(use(half), use(freeSpace))
 		end
-	)
+		local shown = Vector2.new(
+			math.clamp(use(size).X, MIN.X, math.max(MIN.X, free.X - 24)),
+			math.clamp(use(size).Y, MIN.Y, math.max(MIN.Y, space.Y - 16))
+		)
+		local at = use(offset) or origin + (free - shown) / 2
+		at = Vector2.new(
+			math.clamp(at.X, 8 - shown.X + 120, space.X - 120),
+			math.clamp(at.Y, 0, space.Y - 48)
+		)
+		return { At = at, Size = shown }
+	end)
 
 	local function beginDrag(input)
-		if not Pointer.isPress(input) or peek(compact) or peek(maximized) then
+		if not Pointer.isPress(input) or peek(compact) then
 			return
 		end
 		local start = Vector2.new(input.Position.X, input.Position.Y)
 		local origin = peek(rect).At
+		-- A snapped window waits for a real drag so clicks on topbar buttons don't unsnap it.
+		local moved = not (peek(maximized) or peek(half))
 		Pointer.drag(
 			scope,
 			function(point)
-				offset:set(origin + (point - start) / props.Scale())
+				local delta = (point - start) / props.Scale()
+				if not moved then
+					if delta.Magnitude < 6 then
+						return
+					end
+					moved = true
+					-- Back to the floating size, keeping the pointer at the same spot along the topbar.
+					local from = peek(rect)
+					maximized:set(false)
+					half:set(nil)
+					local pressed = start / props.Scale()
+					local width = peek(rect).Size.X
+					origin = Vector2.new(
+						pressed.X - (pressed.X - from.At.X) / from.Size.X * width,
+						from.At.Y
+					)
+				end
+				offset:set(origin + delta)
+				armed:set(Window.snapFor(point / props.Scale(), peek(freeSpace)))
+			end,
+			function()
+				local kind = peek(armed)
+				armed:set(nil)
+				if kind == "max" then
+					maximized:set(true)
+				elseif kind then
+					half:set(kind)
+				end
 			end
 		)
 	end
+
+	Window.preview(
+		scope,
+		props.Layer,
+		11,
+		scope:Computed(function(use)
+			local kind = use(armed)
+			return if kind then Window.snapRect(kind, use(freeSpace)) else nil
+		end)
+	)
 
 	local grip = scope:New("TextButton")({
 		Name = "ResizeGrip",
@@ -178,7 +282,7 @@ function Window.new(scope, props)
 		Text = "",
 		ZIndex = 20,
 		Visible = scope:Computed(function(use)
-			return not use(compact) and not use(maximized)
+			return not use(compact) and not use(maximized) and not use(half)
 		end),
 		[OnEvent("InputBegan")] = function(input)
 			if not Pointer.isPress(input) then

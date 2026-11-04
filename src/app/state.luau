@@ -24,6 +24,7 @@ State.Tab = scope:Value("Script")
 State.WindowOpen = scope:Value(false)
 State.ScriptTarget = scope:Value(nil)
 State.PreviewTarget = scope:Value(nil)
+State.InspectTarget = scope:Value(nil)
 -- Phones: the dock takes the screen's width and the window fills the screen.
 State.Compact = scope:Value(false)
 State.Touch = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled

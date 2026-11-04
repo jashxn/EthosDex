@@ -9,6 +9,7 @@ local Root = script.Parent.Parent
 local Fusion = require(Root.packages.fusion)
 local Controls = require(Root.ui.controls)
 local Theme = require(Root.ui.tokens)
+local Scrollbar = require(Root.ui.scrollbar)
 local Fonts = require(Root.ui.fonts)
 local CodeTheme = require(Root.ui.codeTheme)
 local LuauHighlight = require(Root.utils.luauHighlight)
@@ -389,10 +390,8 @@ function ScriptViewer.new(scope)
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		CanvasSize = UDim2.new(),
-		ScrollBarThickness = if State.Touch then 0 else 4,
-		ScrollBarImageColor3 = Theme.Ink,
-		ScrollBarImageTransparency = 0.8,
 	})
+	Scrollbar.attach(scope, scroll)
 	table.insert(
 		scope,
 		scroll:GetPropertyChangedSignal("CanvasPosition"):Connect(function()

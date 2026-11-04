@@ -5,6 +5,7 @@ local Root = script.Parent.Parent
 local Fusion = require(Root.packages.fusion)
 local Controls = require(Root.ui.controls)
 local Theme = require(Root.ui.tokens)
+local Scrollbar = require(Root.ui.scrollbar)
 local EthosTheme = require(Root.ui.theme)
 local Env = require(Root.core.env)
 local Api = require(Root.core.api)
@@ -203,12 +204,6 @@ function SettingsPage.new(scope)
 							{ 0.7, "70%" },
 							{ 0.55, "55%" },
 						}
-					),
-					choiceRow(
-						"DockSide",
-						"Dock side",
-						"Which edge the explorer and properties sit on",
-						{ { "Right", "Right" }, { "Left", "Left" } }
 					),
 					switchRow(
 						"CustomCursor",
@@ -504,9 +499,6 @@ function SettingsPage.new(scope)
 		BorderSizePixel = 0,
 		AutomaticCanvasSize = Enum.AutomaticSize.Y,
 		CanvasSize = UDim2.new(),
-		ScrollBarThickness = 3,
-		ScrollBarImageColor3 = Theme.Ink,
-		ScrollBarImageTransparency = 0.8,
 		ScrollingDirection = Enum.ScrollingDirection.Y,
 		[Children] = {
 			scope:New("UIPadding")({
@@ -522,6 +514,7 @@ function SettingsPage.new(scope)
 			content,
 		},
 	})
+	Scrollbar.attach(scope, pane)
 	return { Instance = pane }
 end
 

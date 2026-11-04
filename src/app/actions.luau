@@ -429,6 +429,26 @@ function Actions.entries(list, tree)
 			end,
 		})
 	end
+	-- Inspect leads for remotes and scripts; for anything else it sits after the purpose items.
+	local function inspect(text, icon)
+		add({
+			Text = text,
+			Icon = icon,
+			OnActivated = function()
+				State.InspectTarget:set(first)
+				State.open("Inspect")
+			end,
+		})
+	end
+	local remote = first:IsA("BaseRemoteEvent")
+		or first:IsA("RemoteFunction")
+		or first:IsA("BindableEvent")
+		or first:IsA("BindableFunction")
+	if remote then
+		inspect("Call or block", "terminal")
+	elseif scriptLike(first) then
+		inspect("Search constants", "search")
+	end
 	if Actions.viewable(first) then
 		if peek(State.Viewing) == first then
 			add({ Text = "Stop viewing", Icon = "eye-off", OnActivated = Actions.stopViewing })
@@ -512,6 +532,9 @@ function Actions.entries(list, tree)
 				fired(Env.fire("firetouchinterest", first))
 			end,
 		})
+	end
+	if single and not remote and not scriptLike(first) then
+		inspect("Connections", "list-tree")
 	end
 	divider()
 
